@@ -1,3 +1,19 @@
+/* Copyright (C) 2013 Leonardo Bispo de Oliveira
+ *
+ * This library is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ */
 package br.com.is.http.server;
 
 import java.io.FileInputStream;
@@ -19,7 +35,7 @@ import javax.net.ssl.TrustManagerFactory;
 /**
  * Provides a simple high-level asynchronous Http server API, which can be used to build embedded HTTP servers.
  * 
- * @author leonardobispodeoliveira
+ * @author Leonardo Bispo de Oliveira.
  *
  */
 public final class HTTPServer implements Runnable {
@@ -39,6 +55,7 @@ public final class HTTPServer implements Runnable {
    * @param addr Address to listen on.
    * @param backlog The socket backlog. If this value is less than or equal to zero, then a system default value is used.
    * @param type HTTP connection type (HTTP or HTTPS).
+   * 
    * @throws IOException
    * 
    */
@@ -63,11 +80,17 @@ public final class HTTPServer implements Runnable {
    * Returns the HTTP connection type (HTTP or HTTPS).
    * 
    * @return HTTP connection type (HTTP or HTTPS).
+   * 
    */
   public Type getType() {
     return type;
   }
   
+  /**
+   * Runnable run method. Can be used by a thread, or directly.
+   * 
+   */
+  @Override
   public void run() {
     final HTTPConnectionHandler connHandler = new HTTPConnectionHandler(this, createSSLContext(type));
     connHandler.start();
@@ -90,31 +113,53 @@ public final class HTTPServer implements Runnable {
     
     try {
       connHandler.end();
+      connHandler.wait();
     }
-    catch (IOException e) {
+    catch (IOException | InterruptedException e) {
       throw new RuntimeException("Problems to finish the Connection Handler", e);
     }
   }
     
+  /**
+   * Stop the running HTTP server.
+   * 
+   * @param delay Wait for X seconds delay, before force the stop.
+   * 
+   */
   public void stop(int delay) {
-    //TODO: Currently the delay is not used! Implement it!!
+    try {
+      wait(delay);
+    }
+    catch (InterruptedException e) {
+      //TODO: Implement ME!!
+    }
+    
     running = false;
   }
 
+  /**
+   * Add a new HTTP contex. The context will be called whenever the server received a request that match the path.
+   * 
+   * @param path Context Path.
+   * @param context HTTP context that will be called whenever a request match to the path.
+   * 
+   */
   public void addContext(final String path, final HTTPContext context) {
     if (!running)
       contexts.put(path, context);
-    else {
-      //TODO: Throw a new exception
-    }
+    else
+      throw new RuntimeException("Cannot add a new request while the server is running");
   }  
   
   /**
-   * Helper method to create a new HTTP Request handler and add it to the AIO 
-   * @param channel
-   * @param ops
-   * @param handler
+   * Helper method to create a new HTTP Request handler and add it to the AIO.
+   * 
+   * @param channel Selectable channel used by AIO to do asynchronous Read/Write.
+   * @param ops The interest set for the resulting key.
+   * @param handler The handler for the resulting key
+   * 
    * @throws IOException
+   * 
    */
   private void registerNewHandler(final SelectableChannel channel, int ops, final HTTPRequestHandler handler) throws IOException {
     synchronized (gate) {
@@ -123,6 +168,14 @@ public final class HTTPServer implements Runnable {
     }
   }
   
+  /**
+   * Create a new SSL Context.
+   * 
+   * @param type HTTP connection type (HTTP or HTTPS).
+   * 
+   * @return The SSL Context or null if it is HTTP.
+   * 
+   */
   private SSLContext createSSLContext(final Type type) {
     if (type == Type.HTTPS) {
       try {
@@ -148,6 +201,12 @@ public final class HTTPServer implements Runnable {
     return null;
   }
   
+  /**
+   * Class responsible for handling all the HTTP/TCP connection accept.
+   * 
+   * @author Leonardo Bispo de Oliveira.
+   *
+   */
   private class HTTPConnectionHandler extends Thread {
     private boolean                 exit          = false;
     private ServerSocketChannel     serverChannel = null;
@@ -212,6 +271,7 @@ public final class HTTPServer implements Runnable {
     }
   }
   
+  //FIXME: Only For tests!! - Remove this when writing unit tests!!
   public static void main(String... args) throws InterruptedException, IOException {
     System.out.println("Starting HTTP Class");
     HTTPServer server = new HTTPServer(new InetSocketAddress(9999), 10, HTTPServer.Type.HTTP);

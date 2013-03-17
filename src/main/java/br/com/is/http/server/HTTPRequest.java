@@ -1,5 +1,6 @@
 package br.com.is.http.server;
 
-public class HTTPContext {
+
+public class HTTPRequest {
 
 }

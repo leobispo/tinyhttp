@@ -1,3 +1,19 @@
+/* Copyright (C) 2013 Leonardo Bispo de Oliveira
+ *
+ * This library is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ */
 package br.com.is.http.server;
 
 import java.io.IOException;
@@ -6,9 +22,16 @@ import java.nio.channels.SelectionKey;
 import java.util.Hashtable;
 import java.util.StringTokenizer;
 
+/**
+ * Class responsible to handle all the Requests. This class will be responsible to parse the HTTP information and generate
+ * right calls to the HTTP contexts. If an error occurr or there is no HTTP contexts listening, an exception shall be thrown.
+ * 
+ * @author Leonardo Bispo de Oliveira.
+ *
+ */
 final class HTTPRequestHandler {
   private enum RequestMethod { POST, GET, PUT, HEAD, DELETE, TRACE, CONNECT };
-  private enum HeaderType { Method, Attribute, Body } 
+  private enum HeaderType    { Method, Attribute, Body };
   
   private static final int BUFFER_SIZE = 4096;
   
@@ -26,16 +49,13 @@ final class HTTPRequestHandler {
 
   private Hashtable<String, String>       params          = null;
   private final Hashtable<String, String> header          = new Hashtable<>();
-  
 
-
-  //TODO: IMPLEMENT THE TIMEOUT!!
-  
   /**
    * Constructor.
    * 
-   * @param channel
-   * @param contexts
+   * @param channel The HTTP channel handler. The HTTP channel support SSL Connection as well.
+   * @param contexts All HTTP Contexts registered on HTTP Server class before the run method has been called.
+   * 
    */
   HTTPRequestHandler(final HTTPChannel channel, final Hashtable<String, HTTPContext> contexts) {
     this.channel  = channel;
@@ -45,7 +65,9 @@ final class HTTPRequestHandler {
   /**
    * 
    * @param sk
+   * 
    * @throws IOException
+   * 
    */
   public void handle(final SelectionKey sk) throws IOException {   
     //TODO: MUST KILL THE SESSION AFTER X SECONDS... IF AN ERROR OCCURR, MUST CLOSE THE SESSION!!
@@ -256,10 +278,13 @@ final class HTTPRequestHandler {
    * Decode the HEX URI data.
    * 
    * @param src Data to be decoded.
+   * 
    * @return Decoded URI.
+   * 
    */
   private String decodeHEXUri(final String src) {
     final StringBuilder sb = new StringBuilder();
+    
     for (int i = 0; i < src.length(); ++i) {
       char ch = src.charAt(i);
       switch (ch) {
@@ -282,6 +307,7 @@ final class HTTPRequestHandler {
    * Read a line from the buffer. For us, a read line is a set of octets terminated to "\r\n"
    * 
    * @return An set of octets excluding the "\r\n", or null.
+   * 
    */
   private String readLine() {
     final int position = buffer.position();
