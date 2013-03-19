@@ -3,113 +3,65 @@ package br.com.is.http.server;
 import java.security.Principal;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.Map;
 
 
-public class HTTPRequest {
+public interface HTTPRequest {
+  public enum RequestMethod { POST, GET, PUT, HEAD, DELETE, TRACE, CONNECT };
   
-  public boolean authenticate(final HTTPResponse response) {
-    return false;
-  }
+  public boolean authenticate(final HTTPResponse response);
   
-  public String getAuthType() {
-    return "";
-  }
+  public String getAuthType();
   
-  public String getContextPath() {
-    return "";
-  }
+  public String getContextPath();
   
-  List<Cookie> getCookies() {
-    return null;
-  }
+  public List<Cookie> getCookies();
   
-  public long getDateHeader(final String name) {
-    return 0;
-  }
+  public long getDateHeader(final String name);
   
-  public String getHeader(final String name) {
-    return "";
-  }
+  public String getHeader(final String name);
   
-  public Enumeration<String> getHeaderNames() {
-    return null;
-  }
-  
-  public Enumeration<String> getHeaders(final String name)  {
-    return null;
-  }
-  
-  public int getIntHeader(final String name) {
-    return 0;
-  }
+  public Enumeration<String> getHeaderNames();
 
-  public String getMethod() {
-    return "";
-  }
+  public RequestMethod getMethod();
   
-  public Part getPart(final String name) {
-    return null;
-  }
+  public Part getPart(final String name);
   
-  public String getPathInfo() {
-    return "";
-  }
+  public String getPathInfo();
   
-  public String getPathTranslated() {
-    return "";
-  }
+  public String getPathTranslated();
   
-  public String getQueryString() {
-    return "";
-  }
+  public String getQueryString();
   
-  public String getRemoteUser() {
-    return "";
-  }
+  public String getRemoteUser();
   
-  public String getRequestedSessionId() {
-    return "";
-  }
+  public String getRequestedSessionId();
   
-  public String getRequestURI() {
-    return "";
-  }
+  public String getRequestURI();
   
-  public StringBuffer getRequestURL() {
-    return null;
-  }
+  public StringBuffer getRequestURL();
   
-  HTTPSession getSession() {
-    return null;
-  }
+  public HTTPSession getSession();
   
-  public HTTPSession getSession(boolean create) {
-    return null;
-  }
+  public HTTPSession getSession(boolean create);
   
-  public Principal getUserPrincipal() {
-    return null;
-  }
+  public Principal getUserPrincipal();
   
-  boolean isRequestedSessionIdFromCookie() {
-    return false;
-  }
+  boolean isRequestedSessionIdFromCookie();
   
-  boolean isRequestedSessionIdFromURL() {
-    return false;
-  }
+  boolean isRequestedSessionIdFromURL();
   
-  boolean isRequestedSessionIdValid() {
-    return false;
-  }
+  boolean isRequestedSessionIdValid();
   
-  boolean isUserInRole(final String role) {
-    return false;
-  }
+  boolean isUserInRole(final String role);
   
-  public void login(final String username, final String password) {
-  }
+  public void login(final String username, final String password);
   
-  public void logout() {
-  }
+  public void logout();
+  
+  public String getParameter(final String name);
+  
+  public Map<String, String> getParameterMap();
+  
+  public Enumeration<String>  getParameterNames();
 }

@@ -1,10 +1,13 @@
 package br.com.is.http.server;
 
 public class Cookie {
-  public Object clone() {
-    return null;
+  private final String name;
+  private final String value;
+  
+  public Cookie(final String name, final String value) {
+    this.name  = name;
+    this.value = value;
   }
-
   public String getComment() {
     return "";
   }
@@ -18,7 +21,7 @@ public class Cookie {
   }
 
   public String getName() {
-    return "";
+    return name;
   }
   
   public String getPath() {
@@ -30,7 +33,7 @@ public class Cookie {
   }
 
   public String getValue() {
-    return "";
+    return value;
   }
   
   public int getVersion() {
@@ -58,14 +61,9 @@ public class Cookie {
   }
   
   public void setPath(final String uri) {
-
   }
   
   public void setSecure(boolean flag) {
-
-  }
-
-  public void setValue(final String newValue) {
 
   }
 

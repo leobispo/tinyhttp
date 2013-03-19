@@ -45,9 +45,10 @@ public final class HTTPServer implements Runnable {
   private final InetSocketAddress              addr;
   private final int                            backlog;
   private final Selector                       selector;
-  private final Hashtable<String, HTTPContext> contexts = new Hashtable<>();
-  private final Object                         gate     = new Object();
-  private boolean                              running  = false;
+  private final Hashtable<String, HTTPContext> contexts   = new Hashtable<>();
+  private final Object                         gate       = new Object();
+  private boolean                              running    = false;
+  private SSLContext                           sslContext = null;
   
   /**
    * Constructor.
@@ -92,7 +93,8 @@ public final class HTTPServer implements Runnable {
    */
   @Override
   public void run() {
-    final HTTPConnectionHandler connHandler = new HTTPConnectionHandler(this, createSSLContext(type));
+    sslContext =  createSSLContext(type);
+    final HTTPConnectionHandler connHandler = new HTTPConnectionHandler();
     connHandler.start();
     
     running = true;
@@ -211,8 +213,8 @@ public final class HTTPServer implements Runnable {
     private boolean                 exit          = false;
     private ServerSocketChannel     serverChannel = null;
     
-    private final HTTPServer        server;
-    private final SSLContext        sslContext;
+    //private final HTTPServer        server;
+    //private final SSLContext        sslContext;
     
     /**
      * Constructor.
@@ -221,9 +223,9 @@ public final class HTTPServer implements Runnable {
      * @param sslContext The SSL context if the connection is HTTPS, otherwise null.
      * 
      */
-    public HTTPConnectionHandler(final HTTPServer server, final SSLContext sslContext) {
-      this.sslContext = sslContext;
-      this.server     = server;
+    public HTTPConnectionHandler() {//final HTTPServer server, final SSLContext sslContext) {
+      //this.sslContext = sslContext;
+      //this.server     = server;
     }
     
     /**
@@ -236,7 +238,7 @@ public final class HTTPServer implements Runnable {
       try {
         serverChannel = ServerSocketChannel.open();
         serverChannel.socket().setReuseAddress(true);
-        serverChannel.socket().bind(server.addr, server.backlog);
+        serverChannel.socket().bind(addr, backlog);
       }
       catch (IOException ioe) {
         throw new RuntimeException("Problems to start a new Socket", ioe);
@@ -248,8 +250,8 @@ public final class HTTPServer implements Runnable {
           channel.configureBlocking(false);
           
           if (channel.isOpen() && !exit) {
-            HTTPRequestHandler handler = new HTTPRequestHandler(new HTTPChannel(channel, sslContext), server.contexts);
-            server.registerNewHandler(channel, SelectionKey.OP_READ, handler);
+            HTTPRequestHandler handler = new HTTPRequestHandler(new HTTPChannel(channel, sslContext), contexts);
+            registerNewHandler(channel, SelectionKey.OP_READ, handler);
           }
         }
         catch (IOException ioe) {
@@ -274,7 +276,52 @@ public final class HTTPServer implements Runnable {
   //FIXME: Only For tests!! - Remove this when writing unit tests!!
   public static void main(String... args) throws InterruptedException, IOException {
     System.out.println("Starting HTTP Class");
-    HTTPServer server = new HTTPServer(new InetSocketAddress(9999), 10, HTTPServer.Type.HTTP);
+    HTTPServer server = new HTTPServer(new InetSocketAddress("localhost", 9999), 10, HTTPServer.Type.HTTP);
+    
+    server.addContext("/test.html", new HTTPContext() {
+      
+      @Override
+      protected void doTrace(HTTPRequest req, HTTPResponse resp) {
+        // TODO Auto-generated method stub
+        
+      }
+      
+      @Override
+      protected void doPut(HTTPRequest req, HTTPResponse resp) {
+        // TODO Auto-generated method stub
+        
+      }
+      
+      @Override
+      protected void doPost(HTTPRequest req, HTTPResponse resp) {
+        // TODO Auto-generated method stub
+        
+      }
+      
+      @Override
+      protected void doOptions(HTTPRequest req, HTTPResponse resp) {
+        // TODO Auto-generated method stub
+        
+      }
+      
+      @Override
+      protected void doHead(HTTPRequest req, HTTPResponse resp) {
+        // TODO Auto-generated method stub
+        
+      }
+      
+      @Override
+      protected void doGet(HTTPRequest req, HTTPResponse resp) {
+        System.out.println("HERE " + req.getRequestURL().toString());
+      }
+      
+      @Override
+      protected void doDelete(HTTPRequest req, HTTPResponse resp) {
+        // TODO Auto-generated method stub
+        
+      }
+    });
+    
     server.run();
     while (true) {
       Thread.sleep(1000);

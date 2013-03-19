@@ -60,6 +60,10 @@ final class HTTPChannel {
     channel.close();
   }
   
+  SSLContext getSSLContext() {
+    return sslContext;
+  }
+  
   /*
   int read() throws IOException {
     resizeRequestBB(requestBBSize / 20);

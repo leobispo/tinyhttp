@@ -19,7 +19,12 @@ package br.com.is.http.server;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
+import java.security.Principal;
+import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.Hashtable;
+import java.util.List;
+import java.util.Map;
 import java.util.StringTokenizer;
 
 /**
@@ -30,7 +35,6 @@ import java.util.StringTokenizer;
  *
  */
 final class HTTPRequestHandler {
-  private enum RequestMethod { POST, GET, PUT, HEAD, DELETE, TRACE, CONNECT };
   private enum HeaderType    { Method, Attribute, Body };
   
   private static final int BUFFER_SIZE = 4096;
@@ -38,7 +42,8 @@ final class HTTPRequestHandler {
   private final HTTPChannel                    channel;
   private final Hashtable<String, HTTPContext> contexts;
 
-  private RequestMethod                   method;
+  private String                          uri             = null;
+  private HTTPRequest.RequestMethod       method;
   private HeaderType                      type            = HeaderType.Method;
 
   private String                          mediaType       = null;
@@ -47,6 +52,7 @@ final class HTTPRequestHandler {
 
   private ByteBuffer                      buffer          = ByteBuffer.allocate(BUFFER_SIZE);  
 
+  final private List<Cookie>              cookies         = new ArrayList<>();
   private Hashtable<String, String>       params          = null;
   private final Hashtable<String, String> header          = new Hashtable<>();
 
@@ -63,8 +69,9 @@ final class HTTPRequestHandler {
   }
 
   /**
+   * Whenever a new event occurs in the AIO, this method will be called.
    * 
-   * @param sk
+   * @param sk The key selected in the AIO.
    * 
    * @throws IOException
    * 
@@ -87,7 +94,7 @@ final class HTTPRequestHandler {
             buffer = bb;
           }
         }
-        else if (header.containsKey("content-length") && method == RequestMethod.POST) {
+        else if (header.containsKey("content-length") && method == HTTPRequest.RequestMethod.POST) {
           int contentLength = Integer.parseInt(header.get("content-length"));
             
           ByteBuffer bb = ByteBuffer.allocate(contentLength);
@@ -109,12 +116,16 @@ final class HTTPRequestHandler {
           case PUT:
             processPUT();
           case HEAD:
+            processHEAD();
           break;
           case DELETE:
+            processDELETE();
           break;
           case TRACE:
+            processTRACE();
           break;
           case CONNECT:
+            processCONNECT();
           break;
           default:
             //TODO: RETURN AN ERROR!!
@@ -139,8 +150,8 @@ final class HTTPRequestHandler {
       else if (line.isEmpty()) { 
         if (!headerField.isEmpty()) {
           int idx = headerField.indexOf(':');
-          if (idx != -1) //TODO: Must check if it is not Cookie:
-            header.put(headerField.substring(0, idx).trim().toLowerCase(), headerField.substring(idx + 1).trim());
+          if (idx != -1)
+            parseHeaderField(headerField.substring(0, idx).trim().toLowerCase(), headerField.substring(idx + 1).trim());
         }
         
         type = HeaderType.Body;
@@ -154,21 +165,21 @@ final class HTTPRequestHandler {
           return false; //TODO: THROW AN EXCEPTION
 
         if (method[0].equalsIgnoreCase("POST"))
-          this.method = RequestMethod.POST;
+          this.method = HTTPRequest.RequestMethod.POST;
         else if (method[0].equalsIgnoreCase("GET"))
-          this.method = RequestMethod.GET;
+          this.method = HTTPRequest.RequestMethod.GET;
         else if (method[0].equalsIgnoreCase("PUT"))
-          this.method = RequestMethod.PUT;
+          this.method = HTTPRequest.RequestMethod.PUT;
         else if (method[0].equalsIgnoreCase("HEAD"))
-          this.method = RequestMethod.HEAD;
+          this.method = HTTPRequest.RequestMethod.HEAD;
         else if (method[0].equalsIgnoreCase("DELETE"))
-          this.method = RequestMethod.DELETE;
+          this.method = HTTPRequest.RequestMethod.DELETE;
         else if (method[0].equalsIgnoreCase("TRACE"))
-          this.method = RequestMethod.TRACE;
+          this.method = HTTPRequest.RequestMethod.TRACE;
         else if (method[0].equalsIgnoreCase("CONNECT"))
-          this.method = RequestMethod.CONNECT;        
+          this.method = HTTPRequest.RequestMethod.CONNECT;        
 
-        header.put("Request-URI" , decodeUri(method[1]));
+        uri = decodeUri(method[1]);
         header.put("HTTP-Version", method[2].trim());
         
         type = HeaderType.Attribute;
@@ -176,13 +187,32 @@ final class HTTPRequestHandler {
       else if (line.indexOf(' ') != 0 && line.indexOf('\t') != 0) {
         if (!headerField.isEmpty()) {
           int idx = line.indexOf(':');
-          if (idx != -1) // TODO: Must check if it is not Cookie:
-            header.put(line.substring(0, idx).trim().toLowerCase(), line.substring(idx + 1).trim());
+          if (idx != -1)
+            parseHeaderField(headerField.substring(0, idx).trim().toLowerCase(), headerField.substring(idx + 1).trim());
         }
         headerField = line;
       }
       else
         headerField += line;
+    }
+  }
+  
+  private void parseHeaderField(final String key, final String value) {
+    if (key.equals("cookie"))
+      parseCookies(value);
+    else
+      header.put(key, value);
+  }
+  
+  private void parseCookies(final String cookie) {
+    final StringTokenizer st = new StringTokenizer(cookie, ";");
+    if (st.hasMoreTokens()) {
+      do {
+        final String tmp = st.nextToken();
+        int idx = tmp.indexOf('=');
+        if (idx >= 0)
+          cookies.add(new Cookie(tmp.substring(0, idx).trim(), tmp.substring(idx +1)));
+      } while (st.hasMoreTokens());
     }
   }
   
@@ -213,6 +243,15 @@ final class HTTPRequestHandler {
           
           parseParams(sb.toString());
           buffer.clear();
+          
+          final HTTPContext ctx = contexts.get(uri);
+          if (ctx != null) {
+            HTTPRequestImpl request = new HTTPRequestImpl();
+            ctx.doPost(request, null); //TODO: CHANGE ME!!
+          }
+          else {
+            //TODO: IMPLEMENT ME!!
+          }
         }
         else {
           //TODO: Return an error!!
@@ -228,10 +267,29 @@ final class HTTPRequestHandler {
   }
   
   private void processGET() {
-    //TODO: RETURN !!!
+    final HTTPContext ctx = contexts.get(uri);
+    if (ctx != null) {
+      HTTPRequestImpl request = new HTTPRequestImpl();
+      ctx.doGet(request, null); //TODO: CHANGE ME!!
+    }
+    else {
+      //TODO: IMPLEMENT ME!!
+    }
   }
   
   private void processPUT() {
+  }
+  
+  private void processHEAD() {
+  }
+
+  private void processDELETE() {
+  }
+
+  private void processTRACE() {
+  }
+
+  private void processCONNECT() {
   }
   
   private void parseParams(final String src) {
@@ -337,5 +395,148 @@ final class HTTPRequestHandler {
     buffer.compact();
 
     return null;
+  }
+  
+  private class HTTPRequestImpl implements HTTPRequest {
+/*    private final List<Cookie>              cookies;
+    private final Hashtable<String, String> params;
+    private final Hashtable<String, String> header;
+    
+    
+    public HTTPRequestImpl(final List<Cookie> cookies, final Hashtable<String, String> params, final Hashtable<String, String> header) {
+      this.cookies = cookies;
+      this.params  = params;
+      this.header  = header;
+    }
+*/
+    
+    public boolean authenticate(final HTTPResponse response) {
+      return false;
+    }
+    
+    public String getAuthType() {
+      return "";
+    }
+    
+    public String getContextPath() {
+      return "";
+    }
+    
+    public List<Cookie> getCookies() {
+      return cookies;
+    }
+    
+    public long getDateHeader(final String name) {
+      return 0;
+    }
+    
+    public String getHeader(final String name) {
+      return header.get(name);
+    }
+    
+    public Enumeration<String> getHeaderNames() {
+      return header.keys();
+    }
+
+    public RequestMethod getMethod() {
+      return method;
+    }
+    
+    public Part getPart(final String name) {
+      return null;
+    }
+    
+    public String getPathInfo() {
+      return "";
+    }
+    
+    public String getPathTranslated() {
+      return "";
+    }
+    
+    public String getQueryString() {
+      return "";
+    }
+    
+    public String getRemoteUser() {
+      return "";
+    }
+    
+    public String getRequestedSessionId() {
+      return "";
+    }
+    
+    public String getRequestURI() {
+      return uri;
+    }
+    
+    public StringBuffer getRequestURL() {
+      final StringBuffer buffer = new StringBuffer();
+      if (channel.getSSLContext() != null)
+        buffer.append("https://");
+      else
+        buffer.append("http://");
+
+      buffer.append(channel.getSocketChannel().socket().getLocalAddress().getHostName());
+      final int port = channel.getSocketChannel().socket().getLocalPort();
+      if (port != 80 && port != 443)
+        buffer.append(':').append(port);
+      
+      buffer.append(uri);
+      
+      return buffer;
+    }
+    
+    public HTTPSession getSession() {
+      return null;
+    }
+    
+    public HTTPSession getSession(boolean create) {
+      return null;
+    }
+    
+    public Principal getUserPrincipal() {
+      return null;
+    }
+    
+    public boolean isRequestedSessionIdFromCookie() {
+      return false;
+    }
+    
+    public boolean isRequestedSessionIdFromURL() {
+      return false;
+    }
+    
+    public boolean isRequestedSessionIdValid() {
+      return false;
+    }
+    
+    public boolean isUserInRole(final String role) {
+      return false;
+    }
+    
+    public void login(final String username, final String password) {
+    }
+    
+    public void logout() {
+    }
+    
+    public String getParameter(final String name) {
+      if (params == null)
+        return null;
+      
+      return params.get(name);
+    }
+    
+    public Map<String, String> getParameterMap() {
+      return params;
+    }
+    
+    public Enumeration<String> getParameterNames() {
+      if (params == null)
+        return null;
+      
+      return params.keys();
+    }
   }
 }

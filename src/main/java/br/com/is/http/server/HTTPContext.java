@@ -16,12 +16,30 @@
  */
 package br.com.is.http.server;
 
-public abstract class HTTPContext {
-  protected abstract void doDelete(final HTTPRequest req, final HTTPResponse resp);
-  protected abstract void doGet(final HTTPRequest req, final HTTPResponse resp);
-  protected abstract void doHead(final HTTPRequest req, final HTTPResponse resp);
-  protected abstract void doOptions(final HTTPRequest req, final HTTPResponse resp);
-  protected abstract void doPost(final HTTPRequest req, final HTTPResponse resp);
-  protected abstract void doPut(final HTTPRequest req, final HTTPResponse resp);
-  protected abstract void doTrace(final HTTPRequest req, final HTTPResponse resp);
+public class HTTPContext {
+  protected void doDelete(final HTTPRequest req, final HTTPResponse resp) {
+  }
+  
+  protected void doGet(final HTTPRequest req, final HTTPResponse resp) {  
+  }
+  
+  protected void doHead(final HTTPRequest req, final HTTPResponse resp) {
+    
+  }
+
+  protected void doOptions(final HTTPRequest req, final HTTPResponse resp) {
+
+  }
+
+  protected void doPost(final HTTPRequest req, final HTTPResponse resp) {
+
+  }
+
+  protected void doPut(final HTTPRequest req, final HTTPResponse resp) {
+
+  }
+  
+  protected void doTrace(final HTTPRequest req, final HTTPResponse resp) {
+
+  }
 }
