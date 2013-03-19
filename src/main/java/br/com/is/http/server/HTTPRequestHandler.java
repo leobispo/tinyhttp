@@ -108,6 +108,13 @@ final class HTTPRequestHandler {
           break;
           case PUT:
             processPUT();
+          case HEAD:
+          break;
+          case DELETE:
+          break;
+          case TRACE:
+          break;
+          case CONNECT:
           break;
           default:
             //TODO: RETURN AN ERROR!!
@@ -132,7 +139,7 @@ final class HTTPRequestHandler {
       else if (line.isEmpty()) { 
         if (!headerField.isEmpty()) {
           int idx = headerField.indexOf(':');
-          if (idx != -1)
+          if (idx != -1) //TODO: Must check if it is not Cookie:
             header.put(headerField.substring(0, idx).trim().toLowerCase(), headerField.substring(idx + 1).trim());
         }
         
@@ -169,7 +176,7 @@ final class HTTPRequestHandler {
       else if (line.indexOf(' ') != 0 && line.indexOf('\t') != 0) {
         if (!headerField.isEmpty()) {
           int idx = line.indexOf(':');
-          if (idx != -1)
+          if (idx != -1) // TODO: Must check if it is not Cookie:
             header.put(line.substring(0, idx).trim().toLowerCase(), line.substring(idx + 1).trim());
         }
         headerField = line;
