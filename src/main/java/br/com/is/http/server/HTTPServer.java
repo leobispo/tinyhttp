@@ -32,6 +32,8 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
+import br.com.is.http.server.exception.HTTPRequestException;
+
 /**
  * Provides a simple high-level asynchronous Http server API, which can be used to build embedded HTTP servers.
  * 
@@ -104,7 +106,13 @@ public final class HTTPServer implements Runnable {
         for (Iterator<SelectionKey> it = selector.selectedKeys().iterator(); it.hasNext(); ) {
           final SelectionKey key = it.next();
           it.remove();
-          ((HTTPRequestHandler) key.attachment()).handle(key);
+          try {
+            ((HTTPRequestHandler) key.attachment()).handle(key);
+          }
+          catch (IOException | HTTPRequestException e) {
+            //TODO: Send the right HTTP Error!!
+            key.channel().close();
+          }
         }
         synchronized (gate) {}
       }
@@ -210,22 +218,16 @@ public final class HTTPServer implements Runnable {
    *
    */
   private class HTTPConnectionHandler extends Thread {
-    private boolean                 exit          = false;
-    private ServerSocketChannel     serverChannel = null;
+    private boolean                              exit          = false;
+    private ServerSocketChannel                  serverChannel = null;
     
-    //private final HTTPServer        server;
-    //private final SSLContext        sslContext;
+    private final Hashtable<String, HTTPSession> sessions      = new Hashtable<>();
     
     /**
      * Constructor.
      * 
-     * @param server Parent's instance.
-     * @param sslContext The SSL context if the connection is HTTPS, otherwise null.
-     * 
      */
-    public HTTPConnectionHandler() {//final HTTPServer server, final SSLContext sslContext) {
-      //this.sslContext = sslContext;
-      //this.server     = server;
+    public HTTPConnectionHandler() {
     }
     
     /**
@@ -246,11 +248,11 @@ public final class HTTPServer implements Runnable {
 
       while (!exit) {
         try {
-          SocketChannel channel = serverChannel.accept();
+          final SocketChannel channel = serverChannel.accept();
           channel.configureBlocking(false);
           
           if (channel.isOpen() && !exit) {
-            HTTPRequestHandler handler = new HTTPRequestHandler(new HTTPChannel(channel, sslContext), contexts);
+            final HTTPRequestHandler handler = new HTTPRequestHandler(new HTTPChannel(channel, sslContext), contexts, sessions);
             registerNewHandler(channel, SelectionKey.OP_READ, handler);
           }
         }
