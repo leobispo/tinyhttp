@@ -16,23 +16,16 @@
  */
 package br.com.is.http.server;
 
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.channels.SelectableChannel;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.security.KeyStore;
 import java.util.Hashtable;
-import java.util.Iterator;
 
-import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManagerFactory;
 
-import br.com.is.http.server.exception.HTTPRequestException;
+import br.com.is.nio.EventLoop;
+import br.com.is.nio.listener.AcceptListener;
 
 /**
  * Provides a simple high-level asynchronous Http server API, which can be used to build embedded HTTP servers.
@@ -40,17 +33,18 @@ import br.com.is.http.server.exception.HTTPRequestException;
  * @author Leonardo Bispo de Oliveira.
  *
  */
-public final class HTTPServer implements Runnable {
+public final class HTTPServer implements Runnable, AcceptListener {
   enum Type { HTTP, HTTPS }
   
+  private final Hashtable<String, HTTPSession> sessions = new Hashtable<>();
+  private final EventLoop                      loop = new EventLoop();
   private final Type                           type;
   private final InetSocketAddress              addr;
   private final int                            backlog;
-  private final Selector                       selector;
   private final Hashtable<String, HTTPContext> contexts   = new Hashtable<>();
-  private final Object                         gate       = new Object();
   private boolean                              running    = false;
-  private SSLContext                           sslContext = null;
+  
+  private ServerSocketChannel                  serverChannel = null;
   
   /**
    * Constructor.
@@ -66,7 +60,6 @@ public final class HTTPServer implements Runnable {
     this.addr    = addr;
     this.type    = type;
     this.backlog = backlog;
-    selector     = Selector.open();
   }
   
   /**
@@ -95,39 +88,18 @@ public final class HTTPServer implements Runnable {
    */
   @Override
   public void run() {
-    sslContext =  createSSLContext(type);
-    final HTTPConnectionHandler connHandler = new HTTPConnectionHandler();
-    connHandler.start();
-    
-    running = true;
-    while (running) {
-      try {
-        selector.select();
-        for (Iterator<SelectionKey> it = selector.selectedKeys().iterator(); it.hasNext(); ) {
-          final SelectionKey key = it.next();
-          it.remove();
-          try {
-            ((HTTPRequestHandler) key.attachment()).handle(key);
-          }
-          catch (IOException | HTTPRequestException e) {
-            //TODO: Send the right HTTP Error!!
-            key.channel().close();
-          }
-        }
-        synchronized (gate) {}
-      }
-      catch(IOException ioe) {
-        throw new RuntimeException("Problems to dispatch the selector", ioe);
-      }
-    }
-    
     try {
-      connHandler.end();
-      connHandler.wait();
+      serverChannel = ServerSocketChannel.open();
+      serverChannel.socket().setReuseAddress(true);
+      serverChannel.socket().bind(addr, backlog);
+      
+      loop.registerAcceptListener(serverChannel, this);
     }
-    catch (IOException | InterruptedException e) {
-      throw new RuntimeException("Problems to finish the Connection Handler", e);
+    catch (IOException e) {
+      throw new RuntimeException("Problems to create a new Server socket", e);
     }
+    
+    loop.run();
   }
     
   /**
@@ -138,13 +110,36 @@ public final class HTTPServer implements Runnable {
    */
   public void stop(int delay) {
     try {
+      loop.stop();
       wait(delay);
     }
     catch (InterruptedException e) {
-      //TODO: Implement ME!!
+      throw new RuntimeException(e);
     }
     
     running = false;
+  }
+
+  /**
+   * Called when the server start a new connection.
+   * 
+   * @param channel The server socket channel.
+   * @param manager Event loop instance used to register the new socket to the event loop.
+   * 
+   */
+  @Override
+  public void accept(final ServerSocketChannel channel, final EventLoop manager) {
+    SocketChannel socket;
+    try {
+      socket = channel.accept();
+      socket.socket().setTcpNoDelay(true);
+    }
+    catch (IOException e) {
+      throw new RuntimeException("Problems to accept a new HTTP connection", e);
+    }
+    
+    manager.registerReaderListener(socket, new HTTPRequestHandler(new HTTPChannel(socket, createSSLContext(type), manager),
+      contexts, sessions));
   }
 
   /**
@@ -159,24 +154,7 @@ public final class HTTPServer implements Runnable {
       contexts.put(path, context);
     else
       throw new RuntimeException("Cannot add a new request while the server is running");
-  }  
-  
-  /**
-   * Helper method to create a new HTTP Request handler and add it to the AIO.
-   * 
-   * @param channel Selectable channel used by AIO to do asynchronous Read/Write.
-   * @param ops The interest set for the resulting key.
-   * @param handler The handler for the resulting key
-   * 
-   * @throws IOException
-   * 
-   */
-  private void registerNewHandler(final SelectableChannel channel, int ops, final HTTPRequestHandler handler) throws IOException {
-    synchronized (gate) {
-      selector.wakeup();
-      channel.register(selector, ops, handler);
-    }
-  }
+  } 
   
   /**
    * Create a new SSL Context.
@@ -187,146 +165,6 @@ public final class HTTPServer implements Runnable {
    * 
    */
   private SSLContext createSSLContext(final Type type) {
-    if (type == Type.HTTPS) {
-      try {
-        final char[] passphrase = "passphrase".toCharArray();
-
-        final KeyStore ks = KeyStore.getInstance("JKS");
-        ks.load(new FileInputStream("testkeys"), passphrase);
-
-        final KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
-        kmf.init(ks, passphrase);
-
-        final TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
-        tmf.init(ks);
-
-        final SSLContext sslContext = SSLContext.getInstance("TLS");
-        sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
-      }
-      catch (Exception e) {
-        throw new RuntimeException("Problem to create a new SSL Context", e);
-      }
-    }
-    
-    return null;
-  }
-  
-  /**
-   * Class responsible for handling all the HTTP/TCP connection accept.
-   * 
-   * @author Leonardo Bispo de Oliveira.
-   *
-   */
-  private class HTTPConnectionHandler extends Thread {
-    private boolean                              exit          = false;
-    private ServerSocketChannel                  serverChannel = null;
-    
-    private final Hashtable<String, HTTPSession> sessions      = new Hashtable<>();
-    
-    /**
-     * Constructor.
-     * 
-     */
-    public HTTPConnectionHandler() {
-    }
-    
-    /**
-     * This is the thread's run override method and will be used to accept new connections and register them
-     * to the AIO selector.
-     * 
-     */
-    @Override
-    public void run() {
-      try {
-        serverChannel = ServerSocketChannel.open();
-        serverChannel.socket().setReuseAddress(true);
-        serverChannel.socket().bind(addr, backlog);
-      }
-      catch (IOException ioe) {
-        throw new RuntimeException("Problems to start a new Socket", ioe);
-      }
-
-      while (!exit) {
-        try {
-          final SocketChannel channel = serverChannel.accept();
-          channel.configureBlocking(false);
-          
-          if (channel.isOpen() && !exit) {
-            final HTTPRequestHandler handler = new HTTPRequestHandler(new HTTPChannel(channel, sslContext), contexts, sessions);
-            registerNewHandler(channel, SelectionKey.OP_READ, handler);
-          }
-        }
-        catch (IOException ioe) {
-          throw new RuntimeException("Problems to accept data from the Socket", ioe);
-        }
-      }
-    }
-    
-    /**
-     * Stop this thread, causing the HTTP service to be stopped as well.
-     * 
-     * @throws IOException
-     * 
-     */
-    public void end() throws IOException {
-      exit = true;
-      if (serverChannel != null)
-        serverChannel.close();
-    }
-  }
-  
-  //FIXME: Only For tests!! - Remove this when writing unit tests!!
-  public static void main(String... args) throws InterruptedException, IOException {
-    System.out.println("Starting HTTP Class");
-    HTTPServer server = new HTTPServer(new InetSocketAddress("localhost", 9999), 10, HTTPServer.Type.HTTP);
-    
-    server.addContext("/test.html", new HTTPContext() {
-      
-      @Override
-      protected void doTrace(HTTPRequest req, HTTPResponse resp) {
-        // TODO Auto-generated method stub
-        
-      }
-      
-      @Override
-      protected void doPut(HTTPRequest req, HTTPResponse resp) {
-        // TODO Auto-generated method stub
-        
-      }
-      
-      @Override
-      protected void doPost(HTTPRequest req, HTTPResponse resp) {
-        // TODO Auto-generated method stub
-        
-      }
-      
-      @Override
-      protected void doOptions(HTTPRequest req, HTTPResponse resp) {
-        // TODO Auto-generated method stub
-        
-      }
-      
-      @Override
-      protected void doHead(HTTPRequest req, HTTPResponse resp) {
-        // TODO Auto-generated method stub
-        
-      }
-      
-      @Override
-      protected void doGet(HTTPRequest req, HTTPResponse resp) {
-        System.out.println("HERE " + req.getRequestURL().toString());
-      }
-      
-      @Override
-      protected void doDelete(HTTPRequest req, HTTPResponse resp) {
-        // TODO Auto-generated method stub
-        
-      }
-    });
-    
-    server.run();
-    while (true) {
-      Thread.sleep(1000);
-    }
+    return null; //TODO: IMPLEMENT ME!!
   }
 }

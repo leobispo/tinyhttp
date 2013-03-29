@@ -16,42 +16,28 @@
  */
 package br.com.is.http.server;
 
-import java.util.Collection;
+import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.util.Enumeration;
 
 public interface HTTPResponse {
   public void addCookie(Cookie cookie);
-  
-  public void addDateHeader(final String name, long date);
-  
+
   public void addHeader(final String name, final String value);
-  
-  public void addIntHeader(final String name, int value);
   
   public boolean containsHeader(final String name);
   
-  public String encodeRedirectUrl(final String url);
-  
-  public String encodeUrl(final String url);
-  
   public String getHeader(final String name);
   
-  public Collection<String> getHeaderNames();
-  
-  public Collection<String> getHeaders(final String name);
+  public Enumeration<String> getHeaderNames();
   
   public int getStatus();
-  
-  public void sendError(int sc);
-  
-  public void sendError(int sc, final String msg);
-  
+
   public void sendRedirect(final String location);
   
-  public void setDateHeader(final String name, long date);
-  
-  public void setHeader(final String name, final String value);
-  
-  public void setIntHeader(final String name, int value);
-  
   public void setStatus(int sc);
+  
+  public OutputStream getOutputStream();
+  
+  public PrintWriter getWriter();
 }
