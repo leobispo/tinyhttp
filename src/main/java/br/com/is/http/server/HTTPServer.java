@@ -21,6 +21,8 @@ import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.Hashtable;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import javax.net.ssl.SSLContext;
 
@@ -35,6 +37,8 @@ import br.com.is.nio.listener.AcceptListener;
  */
 public final class HTTPServer implements Runnable, AcceptListener {
   enum Type { HTTP, HTTPS }
+  
+  private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
   
   private final Hashtable<String, HTTPSession> sessions = new Hashtable<>();
   private final EventLoop                      loop = new EventLoop();
@@ -89,6 +93,9 @@ public final class HTTPServer implements Runnable, AcceptListener {
   @Override
   public void run() {
     try {
+      if (LOGGER.isLoggable(Level.INFO))
+        LOGGER.info("Starting the HTTP Server");
+
       serverChannel = ServerSocketChannel.open();
       serverChannel.socket().setReuseAddress(true);
       serverChannel.socket().bind(addr, backlog);
@@ -96,6 +103,9 @@ public final class HTTPServer implements Runnable, AcceptListener {
       loop.registerAcceptListener(serverChannel, this);
     }
     catch (IOException e) {
+      if (LOGGER.isLoggable(Level.SEVERE))
+        LOGGER.log(Level.SEVERE, "Problems to create a new Server socket", e);
+
       throw new RuntimeException("Problems to create a new Server socket", e);
     }
     
@@ -109,12 +119,13 @@ public final class HTTPServer implements Runnable, AcceptListener {
    * 
    */
   public void stop(int delay) {
-    try {
-      loop.stop();
-      wait(delay);
-    }
-    catch (InterruptedException e) {
-      throw new RuntimeException(e);
+    for (;;) {
+      try {
+        loop.stop();
+        wait(delay);
+        break;
+      }
+      catch (InterruptedException e) {}
     }
     
     running = false;
@@ -133,17 +144,23 @@ public final class HTTPServer implements Runnable, AcceptListener {
     try {
       socket = channel.accept();
       socket.socket().setTcpNoDelay(true);
+      
+      if (LOGGER.isLoggable(Level.FINE))
+        LOGGER.fine("Accepting a new connection from: " + socket.socket().toString());
     }
     catch (IOException e) {
+      if (LOGGER.isLoggable(Level.SEVERE))
+        LOGGER.log(Level.SEVERE, "Problems to accept a new HTTP connection", e);
+
       throw new RuntimeException("Problems to accept a new HTTP connection", e);
     }
     
     manager.registerReaderListener(socket, new HTTPRequestHandler(new HTTPChannel(socket, createSSLContext(type), manager),
-      contexts, sessions));
+      contexts, sessions, manager));
   }
 
   /**
-   * Add a new HTTP contex. The context will be called whenever the server received a request that match the path.
+   * Add a new HTTP context. The context will be called whenever the server received a request that match the path.
    * 
    * @param path Context Path.
    * @param context HTTP context that will be called whenever a request match to the path.
@@ -152,8 +169,12 @@ public final class HTTPServer implements Runnable, AcceptListener {
   public void addContext(final String path, final HTTPContext context) {
     if (!running)
       contexts.put(path, context);
-    else
+    else {
+      if (LOGGER.isLoggable(Level.SEVERE))
+        LOGGER.severe("Cannot add a new request while the server is running");
+      
       throw new RuntimeException("Cannot add a new request while the server is running");
+    }
   } 
   
   /**

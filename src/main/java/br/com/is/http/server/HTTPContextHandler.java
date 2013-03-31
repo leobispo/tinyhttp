@@ -1,12 +1,8 @@
 package br.com.is.http.server;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.nio.channels.SelectableChannel;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.Principal;
@@ -17,18 +13,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
-import com.sun.xml.internal.messaging.saaj.util.ByteInputStream;
-
 import br.com.is.http.server.mediatype.ApplicationXwwwFormURLEncode;
 import br.com.is.http.server.mediatype.HTTPMediaType;
 import br.com.is.http.server.mediatype.MultipartFormData;
-import br.com.is.nio.ByteBufferInputStream;
-import br.com.is.nio.ByteBufferOutputStream;
 import br.com.is.nio.EventLoop;
-import br.com.is.nio.listener.ReaderListener;
-import br.com.is.nio.listener.WriterListener;
 
-public class HTTPContextHandler implements Runnable {
+public final class HTTPContextHandler implements Runnable {
  //private enum OutputType    { NONE, OUTPUT_STREAM, PRINT_WRITER };
   private final HTTPRequest.RequestMethod      method;
   private final String                         uri;
@@ -39,11 +29,14 @@ public class HTTPContextHandler implements Runnable {
   private final List<Cookie>                   cookies;
   private final Hashtable<String, String>      header;
   private final Hashtable<String, String>      params;
+  private final ByteBuffer                     buffer;
   
-  private final HTTPInputStream                is;
-  private final HTTPOutputStream               os;
+  //private final HTTPOutputStream               os;
   
   private static final String M_DIGEST_ALGORITHM            = "MD5";
+  
+  private static final String CONTENT_LENGTH                = "content-length";
+  private static final String CONTENT_TYPE                  = "content-type";
   
   private static final String MULTIPART_FORM_DATA           = "multipart/form-data";
   private static final String APPLICATION_X_FORM_URL_ENCODE = "application/x-www-form-urlencoded";
@@ -66,36 +59,31 @@ public class HTTPContextHandler implements Runnable {
     this.cookies  = cookies;
     this.header   = header;
     this.params   = params;
-    
+    this.buffer   = buffer;
+
     manager.unregisterReaderListener(channel.getSocketChannel());
     manager.unregisterWriterListener(channel.getSocketChannel());
-
-    is = new HTTPInputStream(channel.getSocketChannel(), manager, buffer); //TODO: JUST CREATE WHEN YOU ARE SURE YOU WILL USE IT!
-    os = new HTTPOutputStream(channel.getSocketChannel(), manager);
   }
 
   @Override
   public void run() {
-    //TODO: IF THE CONTENT-LENGTH IS TOO BIG OR NO CONTENT-LENGTH, FIRST PARSE THE DATA AND STORE IT ON A TEMP FILE - IF IT IS MULTIPART - YOU MUST DO IT AS WELL
+    HTTPInputStream is = null;
     switch (method) {
       case GET:
-        context.doGet(new HTTPRequestImpl(), null);
+      {
+        is = new HTTPInputStream(channel, manager);
+        context.doGet(new HTTPRequestImpl(is), null); //TODO: Don't forget to send the Response!!
+      }
       break;
       case HEAD:
-        context.doHead(new HTTPRequestImpl(), null);
-        //TODO: JUST WRITE THE HEAD, NOT THE BODY!!
+      {
+        is = new HTTPInputStream(channel, manager);
+        context.doHead(new HTTPRequestImpl(is), null); //TODO: Don't forget to send the Response!!
+        //TODO: JUST WRITE THE HEAD, NOT THE BODY!! - SO, JUST MAKE THE OutputStream a dummy one!!
+      }
       break;
       case POST:
-        BufferedReader reader = new BufferedReader(new InputStreamReader(is));
-      try {
-        String line = reader.readLine();
-        System.out.println(line);
-      }
-      catch (IOException e1) {
-        // TODO Auto-generated catch block
-        e1.printStackTrace();
-      }
-        //context.doPost(null, null);
+        processPOST();
       break;
       case PUT:
         context.doPut(null, null);
@@ -125,22 +113,38 @@ public class HTTPContextHandler implements Runnable {
     }
   }
 
-  private static class HTTPInputStream extends ByteBufferInputStream {
+  private void processPOST() {
+    /*
+    long contentLength = 0;
+    try {
+      String length = header.get(CONTENT_LENGTH);
 
-    public HTTPInputStream(final SelectableChannel channel, final EventLoop manager, final ByteBuffer buffer) {
-      super(channel, manager, buffer);
-      // TODO Auto-generated constructor stub
-    }
-  }
-  
-  private static class HTTPOutputStream extends ByteBufferOutputStream {
+      if (length == null) {
+        //TODO: SEND AN ERROR AND THROW AN EXCEPTION!!
+      }
 
-    public HTTPOutputStream(SelectableChannel channel, EventLoop manager) {
-      super(channel, manager);
-      // TODO Auto-generated constructor stub
+      contentLength = Long.parseLong(length);
     }
+    catch (NumberFormatException e) {
+      //TODO: Implement ME!!
+    }
+
+    String type = header.get(CONTENT_TYPE);
+    
+    if (type == null) {
+      //TODO: SEND AN ERROR
+    }
+    
+    HTTPMediaType mediaType = mediaTypes.get(type.toLowerCase());
+    if (mediaType != null) {
+      //HTTPInputStream is = new HTTPInputStream(channel, manager, buffer, contentLength);
+      
+    }
+    else {
+      //TODO: IMPLEMENT ME!!
+    }
+    */
   }
-  
 /*
   private void processPOST(final HTTPContext ctx, final EventLoop manager) throws UnsuportedMediaTypeException, BadRequestException {
     if (header.containsKey(CONTENT_TYPE)) {
@@ -212,7 +216,12 @@ public class HTTPContextHandler implements Runnable {
    */
   private class HTTPRequestImpl implements HTTPRequest {
     private HTTPSession session = null;
+    private final HTTPInputStream is;
     
+    public HTTPRequestImpl(final HTTPInputStream is) {
+      this.is = is;
+    }
+     
     @Override
     public boolean authenticate(final HTTPResponse response) {
       return false;
@@ -335,6 +344,11 @@ public class HTTPContextHandler implements Runnable {
         return null;
       
       return params.keys();
+    }
+
+    @Override
+    public InputStream getInputStream() {
+      return is;
     }
     
     /**

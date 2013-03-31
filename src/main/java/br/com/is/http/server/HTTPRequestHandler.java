@@ -23,11 +23,12 @@ import java.util.ArrayList;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.StringTokenizer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import br.com.is.http.server.exception.BadRequestException;
 import br.com.is.nio.EventLoop;
 import br.com.is.nio.listener.ReaderListener;
-import br.com.is.nio.listener.WriterListener;
 
 /**
  * Class responsible to handle all the Requests. This class will be responsible to parse the HTTP information and generate
@@ -36,12 +37,13 @@ import br.com.is.nio.listener.WriterListener;
  * @author Leonardo Bispo de Oliveira.
  *
  */
-final class HTTPRequestHandler implements ReaderListener, WriterListener {
+final class HTTPRequestHandler implements ReaderListener {
   private enum HeaderType    { METHOD, ATTRIBUTE, BODY };
+  
+  private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
   
   private static final int BAD_REQUEST_ERROR              = 400;
   private static final int NOT_FOUND_ERROR                = 404;
-  private static final int LENGTH_REQUIRED_ERROR          = 411;
   private static final int REQUEST_ENTITY_TOO_LARGE_ERROR = 413;
   private static final int INTERNAL_SERVER_ERROR          = 500;
   
@@ -64,6 +66,8 @@ final class HTTPRequestHandler implements ReaderListener, WriterListener {
   final private List<Cookie>              cookies         = new ArrayList<>();
   private Hashtable<String, String>       params          = null;
   private final Hashtable<String, String> header          = new Hashtable<>();
+  
+  private final HTTPOutputStream os;
 
   /**
    * Constructor.
@@ -73,16 +77,18 @@ final class HTTPRequestHandler implements ReaderListener, WriterListener {
    * @param sessions All HTTP Sessions registered on HTTP Server class.
    * 
    */
-  HTTPRequestHandler(final HTTPChannel channel, final Hashtable<String, HTTPContext> contexts, final Hashtable<String, HTTPSession> sessions) {
+  HTTPRequestHandler(final HTTPChannel channel, final Hashtable<String, HTTPContext> contexts, final Hashtable<String, HTTPSession> sessions, final EventLoop manager) {
     this.channel  = channel;
     this.contexts = contexts;
     this.sessions = sessions;
+    
+    os = new HTTPOutputStream(channel, manager);
   }
 
   @Override
   public void read(final SelectableChannel ch, final EventLoop manager) { 
     if (!channel.handshake()) {
-      sendError(manager, "Cannot execute the handshake", BAD_REQUEST_ERROR);
+      sendError("Cannot execute the handshake", BAD_REQUEST_ERROR);
       return;
     }
 
@@ -91,7 +97,10 @@ final class HTTPRequestHandler implements ReaderListener, WriterListener {
       length = channel.read(buffer);
     }
     catch (IOException e) {
-      sendError(manager, INTERNAL_SERVER_ERROR, e);
+      if (LOGGER.isLoggable(Level.WARNING))
+        LOGGER.log(Level.WARNING, "Problems to read from the HTTP Channel", e);
+      
+      sendError(INTERNAL_SERVER_ERROR, e);
       return;
     }
     
@@ -101,7 +110,11 @@ final class HTTPRequestHandler implements ReaderListener, WriterListener {
           if (!readHeader()) {
             if (buffer.remaining() < (int) (buffer.capacity()) * 0.10) {
               if (buffer.capacity() == (BUFFER_SIZE * 2)) {
-                sendError(manager, "Invalid request. Not possible to read the HTTP Header. Header is bigger than "  + (BUFFER_SIZE * 2),
+                if (LOGGER.isLoggable(Level.WARNING))
+                  LOGGER.log(Level.WARNING, "Invalid request. Not possible to read the HTTP Header. Header is bigger than "  + (BUFFER_SIZE * 2),
+                    REQUEST_ENTITY_TOO_LARGE_ERROR);
+
+                sendError("Invalid request. Not possible to read the HTTP Header. Header is bigger than "  + (BUFFER_SIZE * 2),
                   REQUEST_ENTITY_TOO_LARGE_ERROR);
                 return;
               }
@@ -114,15 +127,17 @@ final class HTTPRequestHandler implements ReaderListener, WriterListener {
           }
         }
         catch (BadRequestException be) {
-          sendError(manager, BAD_REQUEST_ERROR, be);
+          if (LOGGER.isLoggable(Level.FINEST))
+            LOGGER.log(Level.FINEST, "Bad request", be);
+          
+          sendError(BAD_REQUEST_ERROR, be);
           return;
         }
         catch (IOException ie) {
-          sendError(manager, INTERNAL_SERVER_ERROR, ie);
-          return;
-        }
-        catch (NumberFormatException ne) {
-          sendError(manager, LENGTH_REQUIRED_ERROR, ne);
+          if (LOGGER.isLoggable(Level.WARNING))
+            LOGGER.log(Level.WARNING, "Problems to read from the HTTP Channel", ie);
+          
+          sendError(INTERNAL_SERVER_ERROR, ie);
           return;
         }
       }
@@ -130,7 +145,10 @@ final class HTTPRequestHandler implements ReaderListener, WriterListener {
       if (type == HeaderType.BODY) {
         final HTTPContext ctx = contexts.get(uri);
         if (ctx == null) {
-          sendError(manager, "Cannot find the context for: " + uri, NOT_FOUND_ERROR);
+          if (LOGGER.isLoggable(Level.WARNING))
+            LOGGER.log(Level.WARNING, "Cannot find the context for: " + uri, NOT_FOUND_ERROR);
+          
+          sendError("Cannot find the context for: " + uri, NOT_FOUND_ERROR);
           return;
         }
  
@@ -144,7 +162,10 @@ final class HTTPRequestHandler implements ReaderListener, WriterListener {
       try {
         channel.close();
       }
-      catch (IOException e) {}
+      catch (IOException e) {
+        if (LOGGER.isLoggable(Level.WARNING))
+          LOGGER.log(Level.WARNING, "Problems to close the channel", e);
+      }
     }
   }
 
@@ -205,7 +226,7 @@ final class HTTPRequestHandler implements ReaderListener, WriterListener {
       }
       else if (line.indexOf(' ') != 0 && line.indexOf('\t') != 0) {
         if (!headerField.isEmpty()) {
-          int idx = line.indexOf(':');
+          int idx = headerField.indexOf(':');
           if (idx != -1)
             parseHeaderField(headerField.substring(0, idx).trim().toLowerCase(), headerField.substring(idx + 1).trim());
         }
@@ -215,42 +236,32 @@ final class HTTPRequestHandler implements ReaderListener, WriterListener {
         headerField += line;
     }
   }
-  
 
   /**
    * Write an error message to the socket and close the communication.
    * 
-   * @param manager
    * @param message
    * @param error
    */
-  private void sendError(final EventLoop manager, String message, int error) {
-    manager.unregisterReaderListener(channel.getSocketChannel());
-
-    buffer.flip();
-    buffer.clear();
-    
-    //TODO: IMPLEMENT ME!! - MUST SEND THE ERROR TO THE USER!!
-    
-    if (buffer.hasRemaining())
-      manager.registerWriterListener(channel.getSocketChannel(), this);
-    else {
-      try {
-        channel.close();
-      }
-      catch (IOException e) {}
+  private void sendError(final String message, int error) {
+    os.sendError(message, error);
+    try {
+      channel.close();
+    }
+    catch (IOException e) {
+      if (LOGGER.isLoggable(Level.WARNING))
+        LOGGER.log(Level.WARNING, "Problems to close the channel", e);
     }
   }
   
   /**
    * Write an error message to the socket and close the communication.
    * 
-   * @param manager
    * @param error
    * @param e
    */
-  private void sendError(final EventLoop manager, int error, Exception e) {
-    sendError(manager, e.getMessage(), error);
+  private void sendError(int error, Exception e) {
+    sendError(e.getMessage(), error);
   }
 
   /**
@@ -378,16 +389,5 @@ final class HTTPRequestHandler implements ReaderListener, WriterListener {
     buffer.compact();
 
     return null;
-  }
-
-  @Override
-  public void write(SelectableChannel ch, EventLoop manager) {
-    try {
-      this.channel.write(buffer);
-      
-      if (!buffer.hasRemaining())
-        channel.close();
-    }
-    catch (IOException e) {}
   }
 }

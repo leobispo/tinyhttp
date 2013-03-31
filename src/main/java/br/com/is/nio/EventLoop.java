@@ -18,7 +18,7 @@ import br.com.is.nio.listener.AcceptListener;
 import br.com.is.nio.listener.ReaderListener;
 import br.com.is.nio.listener.WriterListener;
 
-public class EventLoop implements Runnable {
+public final class EventLoop implements Runnable {
   private static final int READ  = 0;
   private static final int WRITE = 1;
   

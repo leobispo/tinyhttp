@@ -34,7 +34,7 @@ package br.com.is.http.server;
  * @author Leonardo Bispo de Oliveira.
  *
  */
-public class Cookie {
+public final class Cookie {
   private final String name;
   private final String value;
 

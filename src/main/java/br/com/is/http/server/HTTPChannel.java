@@ -43,7 +43,7 @@ final class HTTPChannel {
     return true;
   }
 
-  long write(final ByteBuffer buffer) {
+  long write(final ByteBuffer buffer) throws IOException {
     return -1;  
   }
   

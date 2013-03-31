@@ -16,6 +16,7 @@
  */
 package br.com.is.http.server;
 
+import java.io.InputStream;
 import java.security.Principal;
 import java.util.Enumeration;
 import java.util.List;
@@ -65,4 +66,6 @@ public interface HTTPRequest {
   public Map<String, String> getParameterMap();
   
   public Enumeration<String>  getParameterNames();
+  
+  public InputStream getInputStream();
 }
