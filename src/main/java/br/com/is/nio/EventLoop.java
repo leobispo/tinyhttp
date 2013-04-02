@@ -1,3 +1,19 @@
+/* Copyright (C) 2013 Leonardo Bispo de Oliveira
+ *
+ * This library is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ */
 package br.com.is.nio;
 
 import java.io.IOException;
@@ -22,9 +38,9 @@ public final class EventLoop implements Runnable {
   private static final int READ  = 0;
   private static final int WRITE = 1;
   
-  private static Object sync = new Object();
+  private static Object    sync    = new Object();
   private volatile boolean running = false;
-  private Selector selector;
+  private Selector         selector;
 
   private final ConcurrentLinkedQueue<Runnable> threads = new ConcurrentLinkedQueue<>();
 

@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.StringTokenizer;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -51,9 +52,10 @@ final class HTTPRequestHandler implements ReaderListener {
 
   private static final int    BUFFER_SIZE                 = 4096;
   
-  private final HTTPChannel                    channel;
-  private final Hashtable<String, HTTPContext> contexts;
-  private final Hashtable<String, HTTPSession> sessions;
+  private final EventLoop                              manager;
+  private final HTTPChannel                            channel;
+  private final Hashtable<String, HTTPContext>         contexts;
+  private final ConcurrentHashMap<String, HTTPSession> sessions;
 
   private String                          uri             = null;
   private HTTPRequest.RequestMethod       method;
@@ -63,13 +65,14 @@ final class HTTPRequestHandler implements ReaderListener {
 
   private ByteBuffer                      buffer          = ByteBuffer.allocateDirect(BUFFER_SIZE);  
 
-  final private List<Cookie>              cookies         = new ArrayList<>();
+  private List<Cookie>                    cookies         = new ArrayList<>();
   private Hashtable<String, String>       params          = null;
-  private final Hashtable<String, String> header          = new Hashtable<>();
+  private Hashtable<String, String>       header          = new Hashtable<>();
   
-  private final HTTPOutputStream os;
+  private HTTPOutputStream os;
 
-  //TODO: IMPLEMENT THE Connection: keep-alive!!!
+  private static final String CONNECTION            = "connection";
+  private static final String CONNECTION_KEEP_ALIVE = "keep-alive";
   
   /**
    * Constructor.
@@ -79,7 +82,8 @@ final class HTTPRequestHandler implements ReaderListener {
    * @param sessions All HTTP Sessions registered on HTTP Server class.
    * 
    */
-  HTTPRequestHandler(final HTTPChannel channel, final Hashtable<String, HTTPContext> contexts, final Hashtable<String, HTTPSession> sessions, final EventLoop manager) {
+  HTTPRequestHandler(final HTTPChannel channel, final Hashtable<String, HTTPContext> contexts, final ConcurrentHashMap<String, HTTPSession> sessions, final EventLoop manager) {
+    this.manager  = manager;
     this.channel  = channel;
     this.contexts = contexts;
     this.sessions = sessions;
@@ -157,7 +161,9 @@ final class HTTPRequestHandler implements ReaderListener {
         buffer.flip();
         manager.unregisterReaderListener(channel.getSocketChannel());
         manager.registerThreadListener(new HTTPContextHandler(method, uri, ctx, buffer, this.channel, manager, sessions,
-          cookies, header, params, os));
+          cookies, header, params, os, header.get(CONNECTION).equalsIgnoreCase(CONNECTION_KEEP_ALIVE) ? this : null));
+        
+        reset();
       }
     }
     else {
@@ -391,5 +397,16 @@ final class HTTPRequestHandler implements ReaderListener {
     buffer.compact();
 
     return null;
+  }
+  
+  private void reset() {
+    uri         = null;
+    type        = HeaderType.METHOD;
+    headerField = "";
+    buffer      = ByteBuffer.allocateDirect(BUFFER_SIZE);  
+    cookies     = new ArrayList<>();
+    params      = null;
+    header      = new Hashtable<>();
+    os          = new HTTPOutputStream(channel, manager);
   }
 }

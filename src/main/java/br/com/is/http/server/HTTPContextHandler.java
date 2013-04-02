@@ -1,3 +1,19 @@
+/* Copyright (C) 2013 Leonardo Bispo de Oliveira
+ *
+ * This library is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ */
 package br.com.is.http.server;
 
 import java.io.IOException;
@@ -15,43 +31,47 @@ import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import org.omg.CORBA.portable.ResponseHandler;
 
 import br.com.is.http.server.mediatype.ApplicationXwwwFormURLEncode;
 import br.com.is.http.server.mediatype.HTTPMediaType;
 import br.com.is.http.server.mediatype.MultipartFormData;
 import br.com.is.nio.EventLoop;
+import br.com.is.nio.listener.ReaderListener;
 
 public final class HTTPContextHandler implements Runnable {
-  private enum OutputType    { NONE, OUTPUT_STREAM, PRINT_WRITER };
-  private final HTTPRequest.RequestMethod      method;
-  private final String                         uri;
-  private final HTTPContext                    context;
-  private final HTTPChannel                    channel;
-  private final EventLoop                      manager;
-  private final Hashtable<String, HTTPSession> sessions;
-  private final List<Cookie>                   requestCookies;
-  private final Hashtable<String, String>      requestHeader;
-  private final Hashtable<String, String>      params;
-  private final ByteBuffer                     buffer;
-  
-  private final AtomicInteger                  responseStatus  = new AtomicInteger(200);
-  private final List<Cookie>                   responseCookies = new ArrayList<>();
-  private final Hashtable<String, String>      responseHeader  = new Hashtable<>();
-  
-  //TODO: Must Have a responseHeader!!
-  
-  private final HTTPOutputStream               os;
-  
   private static final String M_DIGEST_ALGORITHM            = "MD5";
+  
+  private final static String SESSION_COOKIE_NAME           = "ISSESSIONID";
   
   private static final String CONTENT_LENGTH                = "content-length";
   private static final String CONTENT_TYPE                  = "content-type";
   
   private static final String MULTIPART_FORM_DATA           = "multipart/form-data";
   private static final String APPLICATION_X_FORM_URL_ENCODE = "application/x-www-form-urlencoded";
+  
+  private enum OutputType { NONE, OUTPUT_STREAM, PRINT_WRITER };
+
+  private HTTPSession                                  session = null;
+  
+  private final HTTPRequest.RequestMethod              method;
+  private final String                                 uri;
+  private final HTTPContext                            context;
+  private final HTTPChannel                            channel;
+  private final EventLoop                              manager;
+  private final ConcurrentHashMap<String, HTTPSession> sessions;
+  private final List<Cookie>                           requestCookies;
+  private final Hashtable<String, String>              requestHeader;
+  private final Hashtable<String, String>              params;
+  private final ByteBuffer                             buffer;
+  private final ReaderListener                         keepAlive;
+  
+  private final AtomicInteger                         responseStatus  = new AtomicInteger(200);
+  private final List<Cookie>                          responseCookies = new ArrayList<>();
+  private final Hashtable<String, String>             responseHeader  = new Hashtable<>();
+  
+  private final HTTPOutputStream                      os;
   
   private static final Map<String, HTTPMediaType> mediaTypes = new Hashtable<>();
   static {
@@ -60,8 +80,8 @@ public final class HTTPContextHandler implements Runnable {
   }
     
   public HTTPContextHandler(final HTTPRequest.RequestMethod method, final String uri, final HTTPContext context, final ByteBuffer buffer, final HTTPChannel channel, 
-    final EventLoop manager, final Hashtable<String, HTTPSession> sessions, final List<Cookie> cookies, final Hashtable<String, String> header,
-    final Hashtable<String, String> params, final HTTPOutputStream os) {
+    final EventLoop manager, final ConcurrentHashMap<String, HTTPSession> sessions, final List<Cookie> cookies, final Hashtable<String, String> header,
+    final Hashtable<String, String> params, final HTTPOutputStream os, final ReaderListener keepALive) {
     this.method         = method;
     this.uri            = uri;
     this.context        = context;
@@ -73,6 +93,9 @@ public final class HTTPContextHandler implements Runnable {
     this.params         = params;
     this.buffer         = buffer;
     this.os             = os;
+    this.keepAlive      = keepALive;
+    
+    session = sessions.get(SESSION_COOKIE_NAME);
     
     os.setResponseCookies(responseCookies);
     os.setResponseHeader(responseHeader);
@@ -114,11 +137,17 @@ public final class HTTPContextHandler implements Runnable {
 
     os.flush();
 
-    try {
-      channel.close();
-    }
-    catch (IOException e) {
+    if (keepAlive == null) {
+      try {
+        channel.close();
+      }
+      catch (IOException e) {
       // TODO Auto-generated catch block
+      }
+    }
+    else {
+      manager.registerReaderListener(channel.getSocketChannel(), keepAlive);
+      //TODO: Create also a timer, so if it is not used in the maximum time, just close it!
     }
   }
 
@@ -224,7 +253,6 @@ public final class HTTPContextHandler implements Runnable {
    *
    */
   private class HTTPRequestImpl implements HTTPRequest {
-    private HTTPSession           session = null;
     private final HTTPInputStream is;
     
     public HTTPRequestImpl(final HTTPInputStream is) {
@@ -308,8 +336,8 @@ public final class HTTPContextHandler implements Runnable {
     public HTTPSession getSession() {
       if (session == null) {
         session = new HTTPSession(generateUID());
-        sessions.put(session.getId(), session);
-        responseCookies.add(new Cookie("THIS_IS_A_TEST", session.getId()));
+        sessions.putIfAbsent(session.getId(), session);
+        responseCookies.add(new Cookie(SESSION_COOKIE_NAME, session.getId()));
       }
       
       return session;

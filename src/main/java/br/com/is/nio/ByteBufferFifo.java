@@ -100,6 +100,10 @@ public final class ByteBufferFifo {
     return buffer;
   }
   
+  /**
+   * Invalidate a write buffer, adding it to the read ready buffer.
+   * 
+   */
   public void invalidateWriteBuffer() {
     if (ignoreData.get())
       return;
@@ -140,6 +144,12 @@ public final class ByteBufferFifo {
     }    
   }
   
+  /**
+   * Prepend a byte buffer to the ready buffer.
+   * 
+   * @param buffer Buffer to be added to the read buffer.
+   * 
+   */
   public void prependByteBuffer(final ByteBuffer buffer) {
     readBuffers.push(buffer);
   }

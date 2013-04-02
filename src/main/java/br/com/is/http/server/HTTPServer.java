@@ -21,6 +21,7 @@ import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.Hashtable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -40,15 +41,14 @@ public final class HTTPServer implements Runnable, AcceptListener {
   
   private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
   
-  private final Hashtable<String, HTTPSession> sessions = new Hashtable<>();
-  private final EventLoop                      loop = new EventLoop();
-  private final Type                           type;
-  private final InetSocketAddress              addr;
-  private final int                            backlog;
-  private final Hashtable<String, HTTPContext> contexts   = new Hashtable<>();
-  private boolean                              running    = false;
-  
-  private ServerSocketChannel                  serverChannel = null;
+  private final ConcurrentHashMap<String, HTTPSession> sessions      = new ConcurrentHashMap<>();
+  private final EventLoop                              loop          = new EventLoop();
+  private final Type                                   type;
+  private final InetSocketAddress                      addr;
+  private final int                                    backlog;
+  private final Hashtable<String, HTTPContext>         contexts      = new Hashtable<>();
+  private boolean                                      running       = false;
+  private ServerSocketChannel                          serverChannel = null;
   
   /**
    * Constructor.
