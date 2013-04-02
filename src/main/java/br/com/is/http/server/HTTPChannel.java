@@ -44,7 +44,11 @@ final class HTTPChannel {
   }
 
   long write(final ByteBuffer buffer) throws IOException {
-    return -1;  
+    if (buffer == null)
+      return -1;
+    
+    //TODO: MUST CHECK IF IT IS SSL
+    return channel.write(buffer);
   }
   
   long read(final ByteBuffer buffer) throws IOException {

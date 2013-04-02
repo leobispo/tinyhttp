@@ -2,16 +2,22 @@ package br.com.is.http.server;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PrintWriter;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.Principal;
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.omg.CORBA.portable.ResponseHandler;
 
 import br.com.is.http.server.mediatype.ApplicationXwwwFormURLEncode;
 import br.com.is.http.server.mediatype.HTTPMediaType;
@@ -19,19 +25,25 @@ import br.com.is.http.server.mediatype.MultipartFormData;
 import br.com.is.nio.EventLoop;
 
 public final class HTTPContextHandler implements Runnable {
- //private enum OutputType    { NONE, OUTPUT_STREAM, PRINT_WRITER };
+  private enum OutputType    { NONE, OUTPUT_STREAM, PRINT_WRITER };
   private final HTTPRequest.RequestMethod      method;
   private final String                         uri;
   private final HTTPContext                    context;
   private final HTTPChannel                    channel;
   private final EventLoop                      manager;
   private final Hashtable<String, HTTPSession> sessions;
-  private final List<Cookie>                   cookies;
-  private final Hashtable<String, String>      header;
+  private final List<Cookie>                   requestCookies;
+  private final Hashtable<String, String>      requestHeader;
   private final Hashtable<String, String>      params;
   private final ByteBuffer                     buffer;
   
-  //private final HTTPOutputStream               os;
+  private final AtomicInteger                  responseStatus  = new AtomicInteger(200);
+  private final List<Cookie>                   responseCookies = new ArrayList<>();
+  private final Hashtable<String, String>      responseHeader  = new Hashtable<>();
+  
+  //TODO: Must Have a responseHeader!!
+  
+  private final HTTPOutputStream               os;
   
   private static final String M_DIGEST_ALGORITHM            = "MD5";
   
@@ -49,17 +61,22 @@ public final class HTTPContextHandler implements Runnable {
     
   public HTTPContextHandler(final HTTPRequest.RequestMethod method, final String uri, final HTTPContext context, final ByteBuffer buffer, final HTTPChannel channel, 
     final EventLoop manager, final Hashtable<String, HTTPSession> sessions, final List<Cookie> cookies, final Hashtable<String, String> header,
-    final Hashtable<String, String> params) {
-    this.method   = method;
-    this.uri      = uri;
-    this.context  = context;
-    this.channel  = channel;
-    this.manager  = manager;
-    this.sessions = sessions;
-    this.cookies  = cookies;
-    this.header   = header;
-    this.params   = params;
-    this.buffer   = buffer;
+    final Hashtable<String, String> params, final HTTPOutputStream os) {
+    this.method         = method;
+    this.uri            = uri;
+    this.context        = context;
+    this.channel        = channel;
+    this.manager        = manager;
+    this.sessions       = sessions;
+    this.requestCookies = cookies;
+    this.requestHeader  = header;
+    this.params         = params;
+    this.buffer         = buffer;
+    this.os             = os;
+    
+    os.setResponseCookies(responseCookies);
+    os.setResponseHeader(responseHeader);
+    os.setResponseStatus(responseStatus);
 
     manager.unregisterReaderListener(channel.getSocketChannel());
     manager.unregisterWriterListener(channel.getSocketChannel());
@@ -67,20 +84,13 @@ public final class HTTPContextHandler implements Runnable {
 
   @Override
   public void run() {
-    HTTPInputStream is = null;
     switch (method) {
       case GET:
-      {
-        is = new HTTPInputStream(channel, manager);
-        context.doGet(new HTTPRequestImpl(is), null); //TODO: Don't forget to send the Response!!
-      }
+        context.doGet(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), new HTTPResponseImpl());
       break;
       case HEAD:
-      {
-        is = new HTTPInputStream(channel, manager);
-        context.doHead(new HTTPRequestImpl(is), null); //TODO: Don't forget to send the Response!!
-        //TODO: JUST WRITE THE HEAD, NOT THE BODY!! - SO, JUST MAKE THE OutputStream a dummy one!!
-      }
+        os.setIgnoreData(true);
+        context.doHead(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), new HTTPResponseImpl());
       break;
       case POST:
         processPOST();
@@ -100,10 +110,9 @@ public final class HTTPContextHandler implements Runnable {
       case OPTIONS:
         context.doOptions(null, null);
       break;
-      default:
-        //TODO: IMPLEMENT ME!!
-      break;
     }
+
+    os.flush();
 
     try {
       channel.close();
@@ -215,7 +224,7 @@ public final class HTTPContextHandler implements Runnable {
    *
    */
   private class HTTPRequestImpl implements HTTPRequest {
-    private HTTPSession session = null;
+    private HTTPSession           session = null;
     private final HTTPInputStream is;
     
     public HTTPRequestImpl(final HTTPInputStream is) {
@@ -234,7 +243,7 @@ public final class HTTPContextHandler implements Runnable {
     
     @Override
     public List<Cookie> getCookies() {
-      return cookies;
+      return requestCookies;
     }
     
     @Override
@@ -244,12 +253,12 @@ public final class HTTPContextHandler implements Runnable {
     
     @Override
     public String getHeader(final String name) {
-      return header.get(name);
+      return requestHeader.get(name);
     }
     
     @Override
     public Enumeration<String> getHeaderNames() {
-      return header.keys();
+      return requestHeader.keys();
     }
     
     @Override
@@ -300,6 +309,7 @@ public final class HTTPContextHandler implements Runnable {
       if (session == null) {
         session = new HTTPSession(generateUID());
         sessions.put(session.getId(), session);
+        responseCookies.add(new Cookie("THIS_IS_A_TEST", session.getId()));
       }
       
       return session;
@@ -399,130 +409,68 @@ public final class HTTPContextHandler implements Runnable {
     }
   }
 
-/*
-  private class HTTPOutputStream extends ByteBufferOutputStream {
-    private final HTTPResponseImpl response;
-    
-    public HTTPOutputStream(HTTPResponseImpl response, HTTPChannel channel, EventLoop manager) {
-      super(channel.getSocketChannel(), manager);
-      this.response = response;
-    }
-
-    //TODO: IMPLEMENT ME IF IT IS HTTPS!!
-    
-    @Override
-    public void write(final SelectableChannel channel, final EventLoop manager) {
-      if (response.writeHeader())
-        super.write(channel, manager);
-      else
-        manager.registerWriterListener(channel, this);
-    }
-  }
-
-  private class HTTPResponseImpl implements HTTPResponse {
-    private int status = 200;
-
-    private OutputType outputType = OutputType.NONE;
-    
-    private final HTTPOutputStream          output;
-    private final PrintWriter               writer;
-    private final List<Cookie>              cookies = new ArrayList<>(); 
-    private final Hashtable<String, String> header  = new Hashtable<>();
-   
-    private boolean headerWritten = false;
-    
-    public HTTPResponseImpl(final EventLoop manager) {
-      output = new HTTPOutputStream(this, channel, manager);
-      writer = new PrintWriter(output, true);
-    }
+  private final class HTTPResponseImpl implements HTTPResponse {
+    private PrintWriter writer = new PrintWriter(os);
+    private OutputType type    = OutputType.NONE;
     
     @Override
     public void addCookie(Cookie cookie) {
-      cookies.add(cookie);      
-    }
-
-    @Override
-    public void sendRedirect(String location) {
-      setStatus(307);
-      // TODO Auto-generated method stub
+      responseCookies.add(cookie);
     }
 
     @Override
     public void addHeader(String name, String value) {
-      header.put(name, value);
+      responseHeader.put(name, value);
     }
-    
+
+    @Override
+    public boolean containsHeader(String name) {
+      return responseHeader.containsKey(name);
+    }
+
     @Override
     public String getHeader(String name) {
-      return header.get(name);
+      return responseHeader.get(name);
     }
 
     @Override
     public Enumeration<String> getHeaderNames() {
-      return header.keys();
+      return responseHeader.keys();
     }
- 
+
     @Override
-    public boolean containsHeader(String name) {
-      return header.containsKey(name);
+    public int getStatus() {
+      return responseStatus.get();
+    }
+
+    @Override
+    public void sendRedirect(String location) {
     }
 
     @Override
     public void setStatus(int sc) {
-      status = sc;
-    }
-    
-    @Override
-    public int getStatus() {
-      return status;
+      responseStatus.set(sc);
     }
 
     @Override
     public OutputStream getOutputStream() {
-      if (outputType == OutputType.PRINT_WRITER)
-        return null;
+      if (type != OutputType.PRINT_WRITER) {
+        type = OutputType.OUTPUT_STREAM;
+        return os;
+      }
       
-      outputType = OutputType.OUTPUT_STREAM;
-      
-      return output;
+      return null;
     }
 
     @Override
     public PrintWriter getWriter() {
-      if (outputType == OutputType.OUTPUT_STREAM)
-        return null;
-      
-      outputType = OutputType.PRINT_WRITER;
-      return writer;
-    }
-    
-    public boolean writeHeader() {
-      if (!headerWritten) {
-        buffer.flip();
-        buffer.clear();
-        StringBuilder builder = new StringBuilder();
-        builder.append("HTTP/1.1 ").append(200).append(" OK\r\n\r\n"); //TODO: CHANGE THIS!!
-        buffer.put(builder.toString().getBytes());
-        buffer.flip();
-        
-        headerWritten = true;
+      if (type != OutputType.OUTPUT_STREAM) {
+        type = OutputType.PRINT_WRITER;
+        return writer;
       }
       
-      if (buffer.remaining() != 0) {
-        try {
-          channel.getSocketChannel().write(buffer);
-          if (buffer.remaining() != 0)
-            return false;
-        }
-        catch (IOException e) {
-          e.printStackTrace(); // TODO Auto-generated catch block
-        } 
-      }
-      
-      return true;
+      return null;
     }
     
   }
-*/
-  
 }

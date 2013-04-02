@@ -100,6 +100,23 @@ public final class ByteBufferFifo {
     return buffer;
   }
   
+  public void invalidateWriteBuffer() {
+    if (ignoreData.get())
+      return;
+    
+    ByteBuffer buffer = null;
+    do {
+      buffer = currentBuffer.get();
+      if (currentBuffer.compareAndSet(buffer, ByteBuffer.allocateDirect(BUFFER_SIZE)) && buffer != null) {
+        buffer.flip();
+        readBuffers.add(buffer);
+      }
+
+      buffer = null;
+    }
+    while (buffer == null);
+  }
+  
   /**
    * Request a filled buffer. If there is no buffer to read, return null.
    * 
@@ -121,5 +138,9 @@ public final class ByteBufferFifo {
     catch (InterruptedException e) {
       return null;
     }    
+  }
+  
+  public void prependByteBuffer(final ByteBuffer buffer) {
+    readBuffers.push(buffer);
   }
 }

@@ -69,6 +69,8 @@ final class HTTPRequestHandler implements ReaderListener {
   
   private final HTTPOutputStream os;
 
+  //TODO: IMPLEMENT THE Connection: keep-alive!!!
+  
   /**
    * Constructor.
    * 
@@ -155,7 +157,7 @@ final class HTTPRequestHandler implements ReaderListener {
         buffer.flip();
         manager.unregisterReaderListener(channel.getSocketChannel());
         manager.registerThreadListener(new HTTPContextHandler(method, uri, ctx, buffer, this.channel, manager, sessions,
-          cookies, header, params));
+          cookies, header, params, os));
       }
     }
     else {

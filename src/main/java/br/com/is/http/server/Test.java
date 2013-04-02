@@ -1,6 +1,7 @@
 package br.com.is.http.server;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.util.logging.Level;
 import java.util.logging.LogManager;
@@ -16,7 +17,7 @@ public class Test {
 
       @Override
       protected void doGet(HTTPRequest req, HTTPResponse resp) {
-        /*
+        req.getSession();
         OutputStream ou = resp.getOutputStream();
 
         try {
@@ -26,7 +27,6 @@ public class Test {
         catch (IOException e) {
           e.printStackTrace();
         }
-        */
       }
     });
 
