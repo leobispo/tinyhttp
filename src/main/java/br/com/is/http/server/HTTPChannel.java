@@ -28,6 +28,8 @@ final class HTTPChannel {
   private final SocketChannel channel;
   private final SSLContext    sslContext;
   private final EventLoop     manager;
+  private ByteBuffer          remainingData;
+  
   
   HTTPChannel(final SocketChannel channel, final SSLContext sslContext, final EventLoop manager) {
     this.channel    = channel;
@@ -51,12 +53,53 @@ final class HTTPChannel {
     return channel.write(buffer);
   }
   
+  private long moveRemaining(final ByteBuffer buffer, int maxLength) {
+    if (maxLength == -1) maxLength = buffer.remaining();
+    int maxTransfer = Math.min(remainingData.remaining(), maxLength);
+    if (maxTransfer > 0) {
+      buffer.put(remainingData.array(), 0, maxTransfer);
+      remainingData.position(maxTransfer);
+      remainingData.compact();
+      remainingData.flip();
+      if (!remainingData.hasRemaining())
+        remainingData = null;
+    }
+    
+    return maxTransfer;
+  }
   long read(final ByteBuffer buffer) throws IOException {
     if (buffer == null)
-      return -1;
+      return 0;
+    
+    if (remainingData != null) {
+      return moveRemaining(buffer, -1);
+    }
     
     //TODO: MUST CHECK IF IT IS SSL
     return channel.read(buffer);
+  }
+  
+  long read(final ByteBuffer buffer, int maxLength) throws IOException {
+    if (buffer == null)
+      return 0;
+    
+    if (remainingData != null)
+      return moveRemaining(buffer, maxLength);
+    
+    int len = channel.read(buffer);
+    
+    if (len > maxLength) {
+      remainingData = ByteBuffer.allocate(buffer.limit());
+      remainingData.put(buffer.array(), maxLength - 1, buffer.limit() - maxLength);
+      buffer.limit(maxLength + 1);
+
+      remainingData.position(maxLength);
+      remainingData.compact();
+      remainingData.flip();
+    }
+    
+    //TODO: MUST CHECK IF IT IS SSL
+    return (len < maxLength) ? len : maxLength;
   }
   
   boolean shutdown() throws IOException {
@@ -71,5 +114,10 @@ final class HTTPChannel {
   
   SSLContext getSSLContext() {
     return sslContext;
+  }
+  
+  void setRemaining(final ByteBuffer buffer) {
+    if (buffer.hasRemaining())
+      remainingData = buffer;
   }
 }

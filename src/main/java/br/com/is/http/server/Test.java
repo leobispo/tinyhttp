@@ -10,16 +10,17 @@ import java.util.logging.Logger;
 public class Test {
   public static void main(String... args) throws InterruptedException, IOException {
     LogManager.getLogManager().getLogger(Logger.GLOBAL_LOGGER_NAME).setLevel(Level.FINE); 
-    
+ 
     HTTPServer server = new HTTPServer(new InetSocketAddress("localhost", 9999), 10, HTTPServer.Type.HTTP);
 
     server.addContext("/test.html", new HTTPContext() {
 
       @Override
       protected void doGet(HTTPRequest req, HTTPResponse resp) {
-        req.getSession();
+        HTTPSession session = req.getSession();
         OutputStream ou = resp.getOutputStream();
 
+        session.setAttribute("Teste", "Test");
         try {
           ou.write("abc".getBytes());
           ou.flush();

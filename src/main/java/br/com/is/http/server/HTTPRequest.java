@@ -23,7 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 public interface HTTPRequest { 
-  public enum RequestMethod { POST, GET, PUT, HEAD, DELETE, TRACE, OPTIONS, CONNECT };
+  public enum RequestMethod { POST, GET, PUT, HEAD, DELETE, TRACE, OPTIONS };
 
   public enum AuthType { BASIC_AUTH, FORM_AUTH, CLIENT_CERT_AUTH, DIGEST_AUTH, NONE_AUTH };
   

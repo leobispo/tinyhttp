@@ -27,6 +27,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
 import java.util.Hashtable;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
@@ -83,7 +84,7 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
   }
 
   @Override                                                              
-  public void write(byte[] source, int offset, int length) {   
+  public void write(byte[] source, int offset, int length) {
     if (ignoreData)
       return;
 
@@ -105,20 +106,32 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
   @Override
   public void flush() {
     if (!headerCreated) {
+/**
+  response-header = Accept-Ranges           ; Section 14.5
+                  | Age                     ; Section 14.6
+                  | ETag                    ; Section 14.19
+                  | Location                ; Section 14.30
+                  | Proxy-Authenticate      ; Section 14.33
+                  | Retry-After             ; Section 14.37
+                  | Server                  ; Section 14.38
+                  | Vary                    ; Section 14.44
+                  | WWW-Authenticate        ; Section 14.47
+ */
       final StringBuilder sb = new StringBuilder();
       sb.append("HTTP/1.1 ")
         .append(responseStatus.get())
-        .append(" ")
+        .append(' ')
         .append(getReasonPhrase(responseStatus.get()))
         .append("\r\n");
       
-      //TODO: Include all the headers!!!
+      if (responseHeader != null) {
+        for (Map.Entry<String,String> entry : responseHeader.entrySet())
+          sb.append(entry.getKey()).append('=').append(entry.getValue()).append("\r\n");
+      }
       
-      //TODO: This must generate the right cookie header!!!
       if (responseCookies != null) {
-        for (Cookie cookie : responseCookies) {
-          sb.append("Set-Cookie: ").append(cookie.getName()).append("=").append(cookie.getValue()).append("\r\n");
-        }
+        for (Cookie cookie : responseCookies)
+          sb.append("Set-Cookie: ").append(cookie).append("\r\n");
       }
       
       String header = sb.append("\r\n").toString();
@@ -188,7 +201,7 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
     ignoreData = ignore;
   }
   
-  public void sendError(final String message, int error) {
+  public void sendError(int error) {
     if (responseStatus == null)
       responseStatus = new AtomicInteger(error);
     else

@@ -16,6 +16,10 @@
  */
 package br.com.is.http.server;
 
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
+import java.util.TimeZone;
+
 /**
  * Creates a cookie, a small amount of information sent by a servlet to a Web browser, saved by the browser, and later sent back to the server. 
  * A cookie's value can uniquely identify a client, so cookies are commonly used for session management. A cookie has a name, a single value, 
@@ -35,6 +39,11 @@ package br.com.is.http.server;
  *
  */
 public final class Cookie {
+  private static final SimpleDateFormat fmt = new SimpleDateFormat("EEE, dd-MMM-yyyy hh:mm:ss z");
+  static {
+    fmt.setTimeZone(TimeZone.getTimeZone("GMT"));
+  }
+
   private final String name;
   private final String value;
 
@@ -212,5 +221,46 @@ public final class Cookie {
    */
   public boolean isHttpOnly() {
     return httpOnly;
+  }
+  
+  /**
+   * Returns a string representation of the cookie object.
+   * 
+   * return String representation of the cookie object.
+   * 
+   */
+  @Override
+  public String toString() {
+    final StringBuffer sb = new StringBuffer();
+
+    sb.append(name).append('=').append(value);
+    
+    if (domain != null)
+      sb.append("; Domain=").append(domain);
+    
+    if (path != null)
+      sb.append("; Path=").append(path);
+
+    if (secure)
+      sb.append("; Secure");
+    
+    if (httpOnly)
+      sb.append("; HttpOnly");
+    
+    if (version != 0)
+      sb.append("; Version=").append(version);
+    
+    if (comment != null)
+      sb.append("; Comment=").append(comment);
+    
+    if (maxAge > -1) {
+      long expires = System.currentTimeMillis() + (maxAge * 1000);
+      sb.append("; Max-Age=").append(maxAge);
+      
+      Timestamp timestamp = new Timestamp(expires);
+      sb.append("; Expires=").append(fmt.format(timestamp));
+    }
+    
+    return sb.toString();
   }
 }

@@ -19,55 +19,77 @@ package br.com.is.http.server;
 import java.util.Enumeration;
 import java.util.Hashtable;
 
+/**
+ * This class will store information related to an HTTP Session. Since HTTP is a stateless protocol, we
+ * are storing a Cookie ISSESSIONID in the client and reversing the id to keep the session alive. To not
+ * keep the session forever, it will have an expiration time.
+ * 
+ * @author Leonardo Bispo de Oliveira
+ *
+ */
 public class HTTPSession {
-  private final Hashtable<String, Cookie> cookies    = new Hashtable<>();
   private final Hashtable<String, Object> attributes = new Hashtable<>();
+  private final String id;
   
+  /**
+   * Constructor.
+   * 
+   * @param id HTTP Session unique id.
+   * 
+   */
   HTTPSession(final String id) {
-    cookies.put("ISSESSIONID", new Cookie("ISSESSIONID", id)); //TODO: Set the expiration date
+    this.id = id;
   }
   
+  /**
+   * Returns the HTTP Session unique id.
+   * 
+   * @return HTTP Session unique id.
+   * 
+   */
+  public String getId() {
+    return id;
+  }
+
+  /**
+   * Add a new attribute to this session.
+   * 
+   * @param name Attribute name.
+   * @param value Attribute value.
+   * 
+   */
+  public void setAttribute(final String name, final Object value) {
+    attributes.put(name, value);
+  }
+
+  /**
+   * Returns the attribute linked to the name passed as parameter.
+   * 
+   * @param name Attribute name.
+   * 
+   * @return Attribute value.
+   * 
+   */
   public Object getAttribute(final String name) {
     return attributes.get(name);
   }
   
+  /**
+   * Returns the attribute names stored in this session.
+   *  
+   * @return Attribute names stored in this session.
+   */
   public Enumeration<String> getAttributeNames() {
     return attributes.keys();
   }
   
-  public long getCreationTime() {
-    return 0;
-  }
-  
-  public String getId() {
-    return cookies.get("ISSESSIONID").getValue();
-  }
-  
-  public long getLastAccessedTime() {
-    return 0;
-  }
-  
-  public int getMaxInactiveInterval() {
-    return 0;
-  }
-  
-  public void invalidate() {
-    
-  }
-  
-  public boolean isNew() {
-    return false;
-  }
-  
+  /**
+   * Remove the attribute linked to the name passed as parameter.
+   * 
+   * @param name Attribute name to be removed.
+   * 
+   */
   public void removeAttribute(final String name) {
     attributes.remove(name);
-  }
-  
-  public void setAttribute(final String name, final Object value) {
-    attributes.put(name, value);
-  }
-  
-  public void setMaxInactiveInterval(int interval) {
-    
   }
 }

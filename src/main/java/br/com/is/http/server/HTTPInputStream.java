@@ -36,7 +36,7 @@ final class HTTPInputStream extends InputStream implements ReaderListener {
   private long                 availableRead;
   private final HTTPChannel    channel;
 
-  private final ByteBufferFifo fifo;
+  private final ByteBufferFifo fifo = new ByteBufferFifo();
 
   protected AtomicBoolean      isEof  = new AtomicBoolean(false);
   private ByteBuffer           buffer = null;
@@ -49,12 +49,7 @@ final class HTTPInputStream extends InputStream implements ReaderListener {
    * 
    */
   public HTTPInputStream(final HTTPChannel channel, final EventLoop manager) {
-    this.channel       = channel;
-    this.availableRead = 0;
-
-    manager.registerReaderListener(channel.getSocketChannel(), this);
-
-    fifo = new ByteBufferFifo();
+    this(channel, manager, 0);
   }
 
   /**
@@ -62,17 +57,15 @@ final class HTTPInputStream extends InputStream implements ReaderListener {
    * 
    * @param channel HTTP Channel that handles both, HTTP or HTTPS connections.
    * @param manager Event loop instance.
-   * @param buffer Remaining header read buffer.
    * @param contentLength How many bytes should I read, before considering EoS.
    * 
    */
-  public HTTPInputStream(final HTTPChannel channel, final EventLoop manager, final ByteBuffer buffer, long contentLength) {
+  public HTTPInputStream(final HTTPChannel channel, final EventLoop manager, long contentLength) {
     this.channel       = channel;
     this.availableRead = contentLength;
 
-    manager.registerReaderListener(channel.getSocketChannel(), this);
-
-    fifo = new ByteBufferFifo(buffer);   
+    read(channel.getSocketChannel(), manager);    
+    manager.registerReaderListener(channel.getSocketChannel(), this);  
   }
 
   /**
@@ -171,20 +164,13 @@ final class HTTPInputStream extends InputStream implements ReaderListener {
         offset        += size;
         length        -= size;
         readLen       += size;
-        availableRead -= size;
-
-        if (availableRead <= 0) {
-          fifo.stop();
-          isEof.set(true);
-        }
 
         if (length == 0)
           return readLen;
       }
 
       buffer = fifo.getReadBuffer();
-    }
-    while (buffer != null || !isEof.get());
+    } while (buffer != null);
 
     return (readLen == 0) ? -1 : readLen;
   }
@@ -201,16 +187,17 @@ final class HTTPInputStream extends InputStream implements ReaderListener {
     long length = -1;
     do {
       try {
-        length = channel.read(fifo.getWriteBuffer());
+        length = channel.read(fifo.getWriteBuffer(), availableRead > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) availableRead);
+        availableRead -= length;
       }
       catch (IOException e) {
         length = -1;
       }
-
-      if (length == -1) {
-        fifo.stop();
-        isEof.set(true);
-      }
-    } while (length > 0);
+    } while (length > 0 && availableRead > 0);
+    
+    if (length == -1 || availableRead <= 0) {
+      fifo.stop();
+      isEof.set(true);
+    }
   }
 }

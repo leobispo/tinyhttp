@@ -44,9 +44,9 @@ public final class EventLoop implements Runnable {
 
   private final ConcurrentLinkedQueue<Runnable> threads = new ConcurrentLinkedQueue<>();
 
-  private final ThreadPoolExecutor executor = new ThreadPoolExecutor(4, 10, 20, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(20));
+  private final ThreadPoolExecutor executor = new ThreadPoolExecutor(10, 50, 20, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(20));
 
-  public EventLoop() { //TODO: SEND THE NUMBER OF ELEMENTS TO THE QUEUE
+  public EventLoop() {
     try {
       selector = Selector.open();
     }
@@ -158,6 +158,7 @@ public final class EventLoop implements Runnable {
     }
     catch (RejectedExecutionException e) {
       threads.add(thread);
+      selector.wakeup();
     }
   }
 

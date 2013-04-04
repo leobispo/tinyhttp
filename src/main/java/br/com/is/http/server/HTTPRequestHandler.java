@@ -19,9 +19,7 @@ package br.com.is.http.server;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectableChannel;
-import java.util.ArrayList;
 import java.util.Hashtable;
-import java.util.List;
 import java.util.StringTokenizer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
@@ -45,30 +43,30 @@ final class HTTPRequestHandler implements ReaderListener {
   
   private static final int BAD_REQUEST_ERROR              = 400;
   private static final int NOT_FOUND_ERROR                = 404;
+  private static final int METHOD_NOT_ALLOWED             = 405;
   private static final int REQUEST_ENTITY_TOO_LARGE_ERROR = 413;
   private static final int INTERNAL_SERVER_ERROR          = 500;
+  private static final int BUFFER_SIZE                    = 4096;
   
-  private static final String COOKIE                      = "cookie";
+  private static final String COOKIE = "cookie";
 
-  private static final int    BUFFER_SIZE                 = 4096;
-  
   private final EventLoop                              manager;
   private final HTTPChannel                            channel;
   private final Hashtable<String, HTTPContext>         contexts;
   private final ConcurrentHashMap<String, HTTPSession> sessions;
 
   private String                          uri             = null;
-  private HTTPRequest.RequestMethod       method;
   private HeaderType                      type            = HeaderType.METHOD;
-
   private String                          headerField     = "";
 
-  private ByteBuffer                      buffer          = ByteBuffer.allocateDirect(BUFFER_SIZE);  
+  private ByteBuffer                      buffer          = ByteBuffer.allocate(BUFFER_SIZE);  
 
-  private List<Cookie>                    cookies         = new ArrayList<>();
+  private Hashtable<String, Cookie>       cookies         = new Hashtable<>();
   private Hashtable<String, String>       params          = null;
   private Hashtable<String, String>       header          = new Hashtable<>();
-  
+  private boolean                         keepAlive       = false;
+  private HTTPRequest.RequestMethod       method;
+
   private HTTPOutputStream os;
 
   private static final String CONNECTION            = "connection";
@@ -99,82 +97,89 @@ final class HTTPRequestHandler implements ReaderListener {
     }
 
     long length = 0;
-    try {
-      length = channel.read(buffer);
-    }
-    catch (IOException e) {
-      if (LOGGER.isLoggable(Level.WARNING))
-        LOGGER.log(Level.WARNING, "Problems to read from the HTTP Channel", e);
-      
-      sendError(INTERNAL_SERVER_ERROR, e);
-      return;
-    }
-    
-    if (length > 0) {
-      if (type != HeaderType.BODY) {
-        try {
-          if (!readHeader()) {
-            if (buffer.remaining() < (int) (buffer.capacity()) * 0.10) {
-              if (buffer.capacity() == (BUFFER_SIZE * 2)) {
-                if (LOGGER.isLoggable(Level.WARNING))
-                  LOGGER.log(Level.WARNING, "Invalid request. Not possible to read the HTTP Header. Header is bigger than "  + (BUFFER_SIZE * 2),
-                    REQUEST_ENTITY_TOO_LARGE_ERROR);
-
-                sendError("Invalid request. Not possible to read the HTTP Header. Header is bigger than "  + (BUFFER_SIZE * 2),
-                  REQUEST_ENTITY_TOO_LARGE_ERROR);
-                return;
-              }
-
-              ByteBuffer bb = ByteBuffer.allocate(buffer.capacity() * 2);
-              buffer.flip();
-              bb.put(buffer);
-              buffer = bb;
-            }
-          }
-        }
-        catch (BadRequestException be) {
-          if (LOGGER.isLoggable(Level.FINEST))
-            LOGGER.log(Level.FINEST, "Bad request", be);
-          
-          sendError(BAD_REQUEST_ERROR, be);
-          return;
-        }
-        catch (IOException ie) {
-          if (LOGGER.isLoggable(Level.WARNING))
-            LOGGER.log(Level.WARNING, "Problems to read from the HTTP Channel", ie);
-          
-          sendError(INTERNAL_SERVER_ERROR, ie);
-          return;
-        }
-      }
-
-      if (type == HeaderType.BODY) {
-        final HTTPContext ctx = contexts.get(uri);
-        if (ctx == null) {
-          if (LOGGER.isLoggable(Level.WARNING))
-            LOGGER.log(Level.WARNING, "Cannot find the context for: " + uri, NOT_FOUND_ERROR);
-          
-          sendError("Cannot find the context for: " + uri, NOT_FOUND_ERROR);
-          return;
-        }
- 
-        buffer.flip();
-        manager.unregisterReaderListener(channel.getSocketChannel());
-        manager.registerThreadListener(new HTTPContextHandler(method, uri, ctx, buffer, this.channel, manager, sessions,
-          cookies, header, params, os, header.get(CONNECTION).equalsIgnoreCase(CONNECTION_KEEP_ALIVE) ? this : null));
-        
-        reset();
-      }
-    }
-    else {
+    do {
       try {
-        channel.close();
+        length = channel.read(buffer);
       }
       catch (IOException e) {
         if (LOGGER.isLoggable(Level.WARNING))
-          LOGGER.log(Level.WARNING, "Problems to close the channel", e);
+          LOGGER.log(Level.WARNING, "Problems to read from the HTTP Channel", e);
+
+        sendError(INTERNAL_SERVER_ERROR, e);
+        return;
       }
-    }
+
+      if (length > 0) {
+        if (keepAlive) {
+          reset();
+          manager.registerReaderListener(channel.getSocketChannel(), this);
+          keepAlive = false;
+        }
+        
+        if (type != HeaderType.BODY) {
+          try {
+            if (!readHeader()) {
+              if (buffer.remaining() < (int) (buffer.capacity()) * 0.10) {
+                if (buffer.capacity() == (BUFFER_SIZE * 2)) {
+                  sendError("Invalid request. Not possible to read the HTTP Header. Header is bigger than "  + (BUFFER_SIZE * 2),
+                      REQUEST_ENTITY_TOO_LARGE_ERROR);
+                  return;
+                }
+
+                ByteBuffer bb = ByteBuffer.allocate(buffer.capacity() * 2);
+                buffer.flip();
+                bb.put(buffer);
+                buffer = bb;
+              }
+            }
+          }
+          catch (BadRequestException be) {
+            if (LOGGER.isLoggable(Level.FINEST))
+              LOGGER.log(Level.FINEST, "Bad request", be);
+
+            sendError(BAD_REQUEST_ERROR, be);
+            return;
+          }
+          catch (IOException ie) {
+            if (LOGGER.isLoggable(Level.WARNING))
+              LOGGER.log(Level.WARNING, "Problems to read from the HTTP Channel", ie);
+
+            sendError(INTERNAL_SERVER_ERROR, ie);
+            return;
+          }
+        }
+
+        if (type == HeaderType.BODY) {
+          final HTTPContext ctx = contexts.get(uri);
+          if (ctx == null) {
+            if (LOGGER.isLoggable(Level.WARNING))
+              LOGGER.log(Level.WARNING, "Cannot find the context for: " + uri, NOT_FOUND_ERROR);
+
+            sendError("Cannot find the context for: " + uri, NOT_FOUND_ERROR);
+            return;
+          }
+
+          buffer.flip();
+          channel.setRemaining(buffer);
+          manager.unregisterReaderListener(channel.getSocketChannel());
+
+          keepAlive = header.get(CONNECTION).equalsIgnoreCase(CONNECTION_KEEP_ALIVE);
+          manager.registerThreadListener(new HTTPContextHandler(method, uri, ctx, this.channel, manager, sessions,
+            cookies, header, params, os, keepAlive ? this : null));
+
+          return;
+        }
+      }
+      else if (length < 0 || keepAlive) {
+        try {
+          channel.close();
+        }
+        catch (IOException e) {
+          if (LOGGER.isLoggable(Level.WARNING))
+            LOGGER.log(Level.WARNING, "Problems to close the channel", e);
+        }
+      } 
+    } while (length > 0);
   }
 
   /**
@@ -222,10 +227,10 @@ final class HTTPRequestHandler implements ReaderListener {
           this.method = HTTPRequest.RequestMethod.DELETE;
         else if (method[0].equalsIgnoreCase(HTTPRequest.RequestMethod.TRACE.name()))
           this.method = HTTPRequest.RequestMethod.TRACE;
-        else if (method[0].equalsIgnoreCase(HTTPRequest.RequestMethod.CONNECT.name()))
-          this.method = HTTPRequest.RequestMethod.CONNECT;
         else if (method[0].equalsIgnoreCase(HTTPRequest.RequestMethod.OPTIONS.name()))
           this.method = HTTPRequest.RequestMethod.OPTIONS;
+        else
+          sendError("Request method not recognized", METHOD_NOT_ALLOWED);
 
         uri = decodeUri(method[1]);
         header.put("HTTP-Version", method[2].trim());
@@ -252,7 +257,10 @@ final class HTTPRequestHandler implements ReaderListener {
    * @param error
    */
   private void sendError(final String message, int error) {
-    os.sendError(message, error);
+    if (LOGGER.isLoggable(Level.WARNING))
+      LOGGER.log(Level.WARNING, message);
+    
+    os.sendError(error);
     try {
       channel.close();
     }
@@ -269,7 +277,17 @@ final class HTTPRequestHandler implements ReaderListener {
    * @param e
    */
   private void sendError(int error, Exception e) {
-    sendError(e.getMessage(), error);
+    if (LOGGER.isLoggable(Level.WARNING))
+      LOGGER.log(Level.WARNING, e.getMessage(), e);
+    
+    os.sendError(error);
+    try {
+      channel.close();
+    }
+    catch (IOException ioe) {
+      if (LOGGER.isLoggable(Level.WARNING))
+        LOGGER.log(Level.WARNING, "Problems to close the channel", ioe);
+    }
   }
 
   /**
@@ -298,8 +316,10 @@ final class HTTPRequestHandler implements ReaderListener {
       do {
         final String tmp = st.nextToken();
         int idx = tmp.indexOf('=');
-        if (idx >= 0)
-          cookies.add(new Cookie(tmp.substring(0, idx).trim(), tmp.substring(idx +1)));
+        if (idx >= 0) {
+          String key = tmp.substring(0, idx).trim();
+          cookies.put(key, new Cookie(key, tmp.substring(idx +1)));
+        }
       } while (st.hasMoreTokens());
     }
   }
@@ -393,18 +413,23 @@ final class HTTPRequestHandler implements ReaderListener {
       sb.append((char) buffer.get());
     }
 
+    System.out.println(sb.toString());
     buffer.reset();
     buffer.compact();
 
     return null;
   }
   
+  /**
+   * Restart this class to be used when the connection is keep-alive.
+   * 
+   */
   private void reset() {
     uri         = null;
     type        = HeaderType.METHOD;
     headerField = "";
-    buffer      = ByteBuffer.allocateDirect(BUFFER_SIZE);  
-    cookies     = new ArrayList<>();
+    buffer      = ByteBuffer.allocate(BUFFER_SIZE);  
+    cookies     = new Hashtable<>();
     params      = null;
     header      = new Hashtable<>();
     os          = new HTTPOutputStream(channel, manager);

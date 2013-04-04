@@ -16,11 +16,12 @@
  */
 package br.com.is.http.server;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintWriter;
-import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.Principal;
@@ -61,10 +62,9 @@ public final class HTTPContextHandler implements Runnable {
   private final HTTPChannel                            channel;
   private final EventLoop                              manager;
   private final ConcurrentHashMap<String, HTTPSession> sessions;
-  private final List<Cookie>                           requestCookies;
+  private final Hashtable<String, Cookie>              requestCookies;
   private final Hashtable<String, String>              requestHeader;
   private final Hashtable<String, String>              params;
-  private final ByteBuffer                             buffer;
   private final ReaderListener                         keepAlive;
   
   private final AtomicInteger                         responseStatus  = new AtomicInteger(200);
@@ -73,14 +73,14 @@ public final class HTTPContextHandler implements Runnable {
   
   private final HTTPOutputStream                      os;
   
-  private static final Map<String, HTTPMediaType> mediaTypes = new Hashtable<>();
+  private static final Map<String, HTTPMediaType>     mediaTypes = new Hashtable<>();
   static {
-    mediaTypes.put(MULTIPART_FORM_DATA          , new MultipartFormData());
+    mediaTypes.put(MULTIPART_FORM_DATA          , new MultipartFormData()           );
     mediaTypes.put(APPLICATION_X_FORM_URL_ENCODE, new ApplicationXwwwFormURLEncode());
   }
     
-  public HTTPContextHandler(final HTTPRequest.RequestMethod method, final String uri, final HTTPContext context, final ByteBuffer buffer, final HTTPChannel channel, 
-    final EventLoop manager, final ConcurrentHashMap<String, HTTPSession> sessions, final List<Cookie> cookies, final Hashtable<String, String> header,
+  public HTTPContextHandler(final HTTPRequest.RequestMethod method, final String uri, final HTTPContext context, final HTTPChannel channel, final EventLoop manager,
+    final ConcurrentHashMap<String, HTTPSession> sessions, final Hashtable<String, Cookie> cookies, final Hashtable<String, String> header,
     final Hashtable<String, String> params, final HTTPOutputStream os, final ReaderListener keepALive) {
     this.method         = method;
     this.uri            = uri;
@@ -91,11 +91,14 @@ public final class HTTPContextHandler implements Runnable {
     this.requestCookies = cookies;
     this.requestHeader  = header;
     this.params         = params;
-    this.buffer         = buffer;
     this.os             = os;
     this.keepAlive      = keepALive;
     
-    session = sessions.get(SESSION_COOKIE_NAME);
+    Cookie sessionCookie = requestCookies.get(SESSION_COOKIE_NAME);
+    if (sessionCookie != null)
+      session = sessions.get(sessionCookie.getValue());
+    else
+      session = null;
     
     os.setResponseCookies(responseCookies);
     os.setResponseHeader(responseHeader);
@@ -107,6 +110,28 @@ public final class HTTPContextHandler implements Runnable {
 
   @Override
   public void run() {
+
+/** TODO: Implement what must be implemented!!
+  request-header = Accept                   ; Section 14.1
+                 | Accept-Charset           ; Section 14.2
+                 | Accept-Encoding          ; Section 14.3
+                 | Accept-Language          ; Section 14.4
+                 | Authorization            ; Section 14.8
+                 | Expect                   ; Section 14.20
+                 | From                     ; Section 14.22
+                 | Host                     ; Section 14.23
+                 | If-Match                 ; Section 14.24
+                 | If-Modified-Since        ; Section 14.25
+                 | If-None-Match            ; Section 14.26
+                 | If-Range                 ; Section 14.27
+                 | If-Unmodified-Since      ; Section 14.28
+                 | Max-Forwards             ; Section 14.31
+                 | Proxy-Authorization      ; Section 14.34
+                 | Range                    ; Section 14.35
+                 | Referer                  ; Section 14.36
+                 | TE                       ; Section 14.39
+                 | User-Agent               ; Section 14.43
+ */
     switch (method) {
       case GET:
         context.doGet(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), new HTTPResponseImpl());
@@ -127,9 +152,6 @@ public final class HTTPContextHandler implements Runnable {
       case TRACE:
         context.doTrace(null, null);
       break;
-      case CONNECT:
-        context.doConnect(null, null);
-      break;
       case OPTIONS:
         context.doOptions(null, null);
       break;
@@ -137,7 +159,10 @@ public final class HTTPContextHandler implements Runnable {
 
     os.flush();
 
-    if (keepAlive == null) {
+    if (keepAlive != null) {
+      keepAlive.read(channel.getSocketChannel(), manager);
+    }
+    else {
       try {
         channel.close();
       }
@@ -145,17 +170,12 @@ public final class HTTPContextHandler implements Runnable {
       // TODO Auto-generated catch block
       }
     }
-    else {
-      manager.registerReaderListener(channel.getSocketChannel(), keepAlive);
-      //TODO: Create also a timer, so if it is not used in the maximum time, just close it!
-    }
   }
 
   private void processPOST() {
-    /*
     long contentLength = 0;
     try {
-      String length = header.get(CONTENT_LENGTH);
+      String length = requestHeader.get(CONTENT_LENGTH);
 
       if (length == null) {
         //TODO: SEND AN ERROR AND THROW AN EXCEPTION!!
@@ -167,7 +187,7 @@ public final class HTTPContextHandler implements Runnable {
       //TODO: Implement ME!!
     }
 
-    String type = header.get(CONTENT_TYPE);
+    String type = requestHeader.get(CONTENT_TYPE);
     
     if (type == null) {
       //TODO: SEND AN ERROR
@@ -175,13 +195,20 @@ public final class HTTPContextHandler implements Runnable {
     
     HTTPMediaType mediaType = mediaTypes.get(type.toLowerCase());
     if (mediaType != null) {
-      //HTTPInputStream is = new HTTPInputStream(channel, manager, buffer, contentLength);
-      
+      HTTPInputStream is = new HTTPInputStream(channel, manager, contentLength);
+      BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+      try {
+        System.out.println(reader.readLine());
+        reader.close();
+      }
+      catch (IOException e) {
+        // TODO Auto-generated catch block
+        e.printStackTrace();
+      }
     }
     else {
       //TODO: IMPLEMENT ME!!
     }
-    */
   }
 /*
   private void processPOST(final HTTPContext ctx, final EventLoop manager) throws UnsuportedMediaTypeException, BadRequestException {
@@ -255,6 +282,8 @@ public final class HTTPContextHandler implements Runnable {
   private class HTTPRequestImpl implements HTTPRequest {
     private final HTTPInputStream is;
     
+    private List<Cookie> cookies = null;
+    
     public HTTPRequestImpl(final HTTPInputStream is) {
       this.is = is;
     }
@@ -271,7 +300,10 @@ public final class HTTPContextHandler implements Runnable {
     
     @Override
     public List<Cookie> getCookies() {
-      return requestCookies;
+      if (cookies == null)
+        cookies = new ArrayList<>(requestCookies.values());
+      
+      return cookies;
     }
     
     @Override
@@ -337,6 +369,7 @@ public final class HTTPContextHandler implements Runnable {
       if (session == null) {
         session = new HTTPSession(generateUID());
         sessions.putIfAbsent(session.getId(), session);
+
         responseCookies.add(new Cookie(SESSION_COOKIE_NAME, session.getId()));
       }
       

@@ -44,8 +44,4 @@ public class HTTPContext {
   protected void doTrace(final HTTPRequest req, final HTTPResponse resp) {
     resp.setStatus(405);
   }
-  
-  protected void doConnect(final HTTPRequest req, final HTTPResponse resp) {
-    resp.setStatus(405);
-  }
 }
