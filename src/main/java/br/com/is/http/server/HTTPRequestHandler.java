@@ -43,7 +43,7 @@ final class HTTPRequestHandler implements ReaderListener {
   
   private static final int BAD_REQUEST_ERROR              = 400;
   private static final int NOT_FOUND_ERROR                = 404;
-  private static final int METHOD_NOT_ALLOWED             = 405;
+  private static final int METHOD_NOT_ALLOWED_ERROR       = 405;
   private static final int REQUEST_ENTITY_TOO_LARGE_ERROR = 413;
   private static final int INTERNAL_SERVER_ERROR          = 500;
   private static final int BUFFER_SIZE                    = 4096;
@@ -102,9 +102,6 @@ final class HTTPRequestHandler implements ReaderListener {
         length = channel.read(buffer);
       }
       catch (IOException e) {
-        if (LOGGER.isLoggable(Level.WARNING))
-          LOGGER.log(Level.WARNING, "Problems to read from the HTTP Channel", e);
-
         sendError(INTERNAL_SERVER_ERROR, e);
         return;
       }
@@ -134,16 +131,10 @@ final class HTTPRequestHandler implements ReaderListener {
             }
           }
           catch (BadRequestException be) {
-            if (LOGGER.isLoggable(Level.FINEST))
-              LOGGER.log(Level.FINEST, "Bad request", be);
-
             sendError(BAD_REQUEST_ERROR, be);
             return;
           }
           catch (IOException ie) {
-            if (LOGGER.isLoggable(Level.WARNING))
-              LOGGER.log(Level.WARNING, "Problems to read from the HTTP Channel", ie);
-
             sendError(INTERNAL_SERVER_ERROR, ie);
             return;
           }
@@ -152,9 +143,6 @@ final class HTTPRequestHandler implements ReaderListener {
         if (type == HeaderType.BODY) {
           final HTTPContext ctx = contexts.get(uri);
           if (ctx == null) {
-            if (LOGGER.isLoggable(Level.WARNING))
-              LOGGER.log(Level.WARNING, "Cannot find the context for: " + uri, NOT_FOUND_ERROR);
-
             sendError("Cannot find the context for: " + uri, NOT_FOUND_ERROR);
             return;
           }
@@ -187,7 +175,7 @@ final class HTTPRequestHandler implements ReaderListener {
    * 
    * @return True if it is correctly parsed, otherwise false.
    * 
-   * @throws IOException, HTTPRequestException
+   * @throws IOException, BadRequestException
    *
    */
   private boolean readHeader() throws IOException, BadRequestException {
@@ -230,7 +218,7 @@ final class HTTPRequestHandler implements ReaderListener {
         else if (method[0].equalsIgnoreCase(HTTPRequest.RequestMethod.OPTIONS.name()))
           this.method = HTTPRequest.RequestMethod.OPTIONS;
         else
-          sendError("Request method not recognized", METHOD_NOT_ALLOWED);
+          sendError("Request method not recognized", METHOD_NOT_ALLOWED_ERROR);
 
         uri = decodeUri(method[1]);
         header.put("HTTP-Version", method[2].trim());

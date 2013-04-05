@@ -40,4 +40,6 @@ public interface HTTPResponse {
   public OutputStream getOutputStream();
   
   public PrintWriter getWriter();
+  
+  public void sendError(int error);
 }

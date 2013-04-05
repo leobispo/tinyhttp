@@ -16,7 +16,7 @@ public class Test {
     server.addContext("/test.html", new HTTPContext() {
 
       @Override
-      protected void doGet(HTTPRequest req, HTTPResponse resp) {
+      public void doPost(HTTPRequest req, HTTPResponse resp) {
         HTTPSession session = req.getSession();
         OutputStream ou = resp.getOutputStream();
 

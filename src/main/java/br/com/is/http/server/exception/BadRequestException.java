@@ -1,6 +1,6 @@
 package br.com.is.http.server.exception;
 
-public class BadRequestException extends HTTPRequestException {
+public class BadRequestException extends Exception {
 
   private static final long serialVersionUID = 6614991236571962812L;
 

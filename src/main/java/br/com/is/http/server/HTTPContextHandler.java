@@ -16,10 +16,8 @@
  */
 package br.com.is.http.server;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.security.MessageDigest;
@@ -34,6 +32,8 @@ import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import br.com.is.http.server.mediatype.ApplicationXwwwFormURLEncode;
 import br.com.is.http.server.mediatype.HTTPMediaType;
@@ -42,6 +42,11 @@ import br.com.is.nio.EventLoop;
 import br.com.is.nio.listener.ReaderListener;
 
 public final class HTTPContextHandler implements Runnable {
+  private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+
+  private static final int UNSUPORTED_MEDIA_TYPE_ERROR      = 415;
+  private static final int LENGTH_REQUIRED_ERROR            = 411;
+  
   private static final String M_DIGEST_ALGORITHM            = "MD5";
   
   private final static String SESSION_COOKIE_NAME           = "ISSESSIONID";
@@ -90,7 +95,12 @@ public final class HTTPContextHandler implements Runnable {
     this.sessions       = sessions;
     this.requestCookies = cookies;
     this.requestHeader  = header;
-    this.params         = params;
+    
+    if (params == null)
+      this.params = new Hashtable<>();
+    else
+      this.params = params;
+    
     this.os             = os;
     this.keepAlive      = keepALive;
     
@@ -112,6 +122,16 @@ public final class HTTPContextHandler implements Runnable {
   public void run() {
 
 /** TODO: Implement what must be implemented!!
+  general-header = Cache-Control            ; Section 14.9
+                 | Connection               ; Section 14.10
+                 | Date                     ; Section 14.18
+                 | Pragma                   ; Section 14.32
+                 | Trailer                  ; Section 14.40
+                 | Transfer-Encoding        ; Section 14.41
+                 | Upgrade                  ; Section 14.42
+                 | Via                      ; Section 14.45
+                 | Warning                  ; Section 14.46
+
   request-header = Accept                   ; Section 14.1
                  | Accept-Charset           ; Section 14.2
                  | Accept-Encoding          ; Section 14.3
@@ -167,7 +187,8 @@ public final class HTTPContextHandler implements Runnable {
         channel.close();
       }
       catch (IOException e) {
-      // TODO Auto-generated catch block
+        if (LOGGER.isLoggable(Level.WARNING))
+          LOGGER.log(Level.WARNING, "Problems to close the HTTP Channel", e);
       }
     }
   }
@@ -178,99 +199,42 @@ public final class HTTPContextHandler implements Runnable {
       String length = requestHeader.get(CONTENT_LENGTH);
 
       if (length == null) {
-        //TODO: SEND AN ERROR AND THROW AN EXCEPTION!!
+        os.sendError(LENGTH_REQUIRED_ERROR);
+        return;
       }
 
+      //TODO: Check if the Content-length is the size that I am willing to process. - implement it using annotation!!
       contentLength = Long.parseLong(length);
     }
     catch (NumberFormatException e) {
-      //TODO: Implement ME!!
+      os.sendError(LENGTH_REQUIRED_ERROR);
+      return;
     }
 
     String type = requestHeader.get(CONTENT_TYPE);
     
     if (type == null) {
-      //TODO: SEND AN ERROR
+      os.sendError(UNSUPORTED_MEDIA_TYPE_ERROR);
+      return;
+    }
+
+    String parameter = null;
+    int idx = type.indexOf(';');
+    if (idx != -1) {
+      parameter = type.substring(idx + 1).trim();
+      type      = type.substring(0, idx).trim().toLowerCase();
     }
     
-    HTTPMediaType mediaType = mediaTypes.get(type.toLowerCase());
+    HTTPMediaType mediaType = mediaTypes.get(type);
     if (mediaType != null) {
-      HTTPInputStream is = new HTTPInputStream(channel, manager, contentLength);
-      BufferedReader reader = new BufferedReader(new InputStreamReader(is));
-      try {
-        System.out.println(reader.readLine());
-        reader.close();
+      mediaType.process(context, new HTTPRequestImpl(new HTTPInputStream(channel, manager, contentLength)),
+        new HTTPResponseImpl(), parameter, params);
       }
-      catch (IOException e) {
-        // TODO Auto-generated catch block
-        e.printStackTrace();
-      }
-    }
     else {
-      //TODO: IMPLEMENT ME!!
+      os.sendError(UNSUPORTED_MEDIA_TYPE_ERROR);
+      return;
     }
   }
-/*
-  private void processPOST(final HTTPContext ctx, final EventLoop manager) throws UnsuportedMediaTypeException, BadRequestException {
-    if (header.containsKey(CONTENT_TYPE)) {
-      parseContentType(header.get(CONTENT_TYPE));
-    
-      if (mediaType != null) {
-        if (mediaType.equalsIgnoreCase(MULTIPART_FORM_DATA)) {
-          //TODO: Process a multipart information!!!
-        }
-        else if (mediaType.equalsIgnoreCase(APPLICATION_X_FORM_URL_ENCODE)) {
-          final int position = buffer.position();
-
-          buffer.flip();
-          
-          final StringBuilder sb = new StringBuilder();
-          for (int i = 0; i < position - 1; ++i) {
-            if (buffer.get(i) == '\r' && buffer.get(i + 1) == '\n') {
-              buffer.get(); buffer.get();
-              break;
-            }
-            
-            sb.append((char) buffer.get());
-          }
-          if (buffer.hasRemaining())
-            sb.append((char) buffer.get());
-          
-          parseParams(sb.toString());
-          buffer.clear();
-          
-          HTTPRequestImpl  request  = new HTTPRequestImpl();
-          ctx.doPost(request, response);
-        }
-        else
-          throw new UnsuportedMediaTypeException("Media type " + mediaType + " not supported");
-      }
-      else
-        throw new BadRequestException("The header does not contains the media-type field");
-    }
- 
-    throw new BadRequestException("The header does not contains the content-type field");
-  }
-
-  private void parseContentType(final String src) {
-    final StringTokenizer st = new StringTokenizer(src, ";");
-    if (st.hasMoreTokens()) {
-      mediaType = st.nextToken().trim();
-    
-      if (st.hasMoreTokens()) {
-        mediaTypeParams = new Hashtable<>();
-        
-        do {
-          final String tmp = st.nextToken();
-          int idx = tmp.indexOf('=');
-          if (idx >= 0)
-            mediaTypeParams.put(tmp.substring(0, idx).trim(), tmp.substring(idx + 1));
-        } while (st.hasMoreTokens());
-      }
-    }
-  }
-*/
-  
   
   /**
    * Implementation of HTTP Request interface. It will be used by the HTTPContext to receive all information parsed by the
@@ -533,5 +497,9 @@ public final class HTTPContextHandler implements Runnable {
       return null;
     }
     
+    @Override
+    public void sendError(int error) {
+      os.sendError(error);
+    }
   }
 }

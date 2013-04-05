@@ -17,31 +17,31 @@
 package br.com.is.http.server;
 
 public class HTTPContext {
-  protected void doDelete(final HTTPRequest req, final HTTPResponse resp) {
+  public void doDelete(final HTTPRequest req, final HTTPResponse resp) {
     resp.setStatus(405);
   }
   
-  protected void doGet(final HTTPRequest req, final HTTPResponse resp) { 
+  public void doGet(final HTTPRequest req, final HTTPResponse resp) { 
     resp.setStatus(405);
   }
   
-  protected void doHead(final HTTPRequest req, final HTTPResponse resp) {
+  public void doHead(final HTTPRequest req, final HTTPResponse resp) {
     resp.setStatus(405);
   }
 
-  protected void doOptions(final HTTPRequest req, final HTTPResponse resp) {
+  public void doOptions(final HTTPRequest req, final HTTPResponse resp) {
     resp.setStatus(405);
   }
 
-  protected void doPost(final HTTPRequest req, final HTTPResponse resp) {
+  public void doPost(final HTTPRequest req, final HTTPResponse resp) {
     resp.setStatus(405);
   }
 
-  protected void doPut(final HTTPRequest req, final HTTPResponse resp) {
+  public void doPut(final HTTPRequest req, final HTTPResponse resp) {
     resp.setStatus(405);
   }
   
-  protected void doTrace(final HTTPRequest req, final HTTPResponse resp) {
+  public void doTrace(final HTTPRequest req, final HTTPResponse resp) {
     resp.setStatus(405);
   }
 }
