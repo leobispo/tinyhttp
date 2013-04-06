@@ -5,21 +5,19 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.Hashtable;
 import java.util.StringTokenizer;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import br.com.is.http.server.HTTPContext;
 import br.com.is.http.server.HTTPRequest;
 import br.com.is.http.server.HTTPResponse;
+import br.com.is.http.server.Part;
+import br.com.is.http.server.exception.HTTPRequestException;
+import br.com.is.http.server.exception.InternalServerErrorException;
 
 public class ApplicationXwwwFormURLEncode implements HTTPMediaType {
-  private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
-  
-  private static int INTERNAL_SERVER_ERROR = 500;
-  
   @Override
   public void process(final HTTPContext context, final HTTPRequest request,final HTTPResponse response,
-    final String parameter, final Hashtable<String, String> requestParams) {
+    final String parameter, final Hashtable<String, String> requestParams,
+    final Hashtable<String, Part> parts) throws HTTPRequestException {
     final BufferedReader reader = new BufferedReader(new InputStreamReader(request.getInputStream()));
     String line;
     try {
@@ -29,10 +27,7 @@ public class ApplicationXwwwFormURLEncode implements HTTPMediaType {
       context.doPost(request, response);
     }
     catch (IOException e) {
-      if (LOGGER.isLoggable(Level.WARNING))
-        LOGGER.log(Level.WARNING, "Problems to read data from the HTTP Channel", e);
-
-      response.sendError(INTERNAL_SERVER_ERROR);
+      throw new InternalServerErrorException("Problems to read data from the HTTP Channel", e);
     }
   }
     

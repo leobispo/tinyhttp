@@ -17,42 +17,25 @@
 package br.com.is.http.server;
 
 import java.io.InputStream;
-import java.util.Collection;
+import java.util.Enumeration;
 
-public class Part {
+public interface Part {
 
-  public void delete() {
-    
-  }
+  public void delete();
   
-  public String getContentType() {
-    return "";
-  }
+  public String getContentType();
   
-  public String getHeader(final String name) {
-    return "";
-  }
+  public String getHeader(final String name);
   
-  public Collection<String> getHeaderNames() {
-    return null;
-  }
+  public Enumeration<String> getHeaderNames();
   
-  public Collection<String> getHeaders(final String name) {
-    return null;
-  }
+  public InputStream getInputStream();
   
-  public InputStream getInputStream() {
-    return null;
-  }
+  public String getName();
   
-  public String getName() {
-    return "";
-  }
+  public String getFileName();
   
-  public long getSize() {
-    return 0;
-  }
+  public long getSize();
   
-  public void write(final String fileName) {
-  }
+  public void write(final String fileName);
 }

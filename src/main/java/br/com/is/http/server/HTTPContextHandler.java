@@ -35,17 +35,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import br.com.is.http.server.exception.HTTPRequestException;
 import br.com.is.http.server.mediatype.ApplicationXwwwFormURLEncode;
 import br.com.is.http.server.mediatype.HTTPMediaType;
 import br.com.is.http.server.mediatype.MultipartFormData;
 import br.com.is.nio.EventLoop;
 import br.com.is.nio.listener.ReaderListener;
 
-public final class HTTPContextHandler implements Runnable {
+final class HTTPContextHandler implements Runnable {
   private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
-  private static final int UNSUPORTED_MEDIA_TYPE_ERROR      = 415;
   private static final int LENGTH_REQUIRED_ERROR            = 411;
+  private static final int REQUEST_ENTITY_TOO_LARGE_ERROR   = 413;
+  private static final int UNSUPORTED_MEDIA_TYPE_ERROR      = 415;
   
   private static final String M_DIGEST_ALGORITHM            = "MD5";
   
@@ -69,6 +71,7 @@ public final class HTTPContextHandler implements Runnable {
   private final ConcurrentHashMap<String, HTTPSession> sessions;
   private final Hashtable<String, Cookie>              requestCookies;
   private final Hashtable<String, String>              requestHeader;
+  private final Hashtable<String, Part>                requestParts = new Hashtable<>();
   private final Hashtable<String, String>              params;
   private final ReaderListener                         keepAlive;
   
@@ -203,8 +206,11 @@ public final class HTTPContextHandler implements Runnable {
         return;
       }
 
-      //TODO: Check if the Content-length is the size that I am willing to process. - implement it using annotation!!
       contentLength = Long.parseLong(length);
+      if (contentLength < context.getMaxContentLenght()) {
+        os.sendError(REQUEST_ENTITY_TOO_LARGE_ERROR);
+        return;
+      }
     }
     catch (NumberFormatException e) {
       os.sendError(LENGTH_REQUIRED_ERROR);
@@ -227,13 +233,19 @@ public final class HTTPContextHandler implements Runnable {
     
     HTTPMediaType mediaType = mediaTypes.get(type);
     if (mediaType != null) {
-      mediaType.process(context, new HTTPRequestImpl(new HTTPInputStream(channel, manager, contentLength)),
-        new HTTPResponseImpl(), parameter, params);
+      try {
+        mediaType.process(context, new HTTPRequestImpl(new HTTPInputStream(channel, manager, contentLength)),
+          new HTTPResponseImpl(), parameter, params, requestParts);
       }
-    else {
-      os.sendError(UNSUPORTED_MEDIA_TYPE_ERROR);
-      return;
+      catch (HTTPRequestException e) {
+        if (LOGGER.isLoggable(Level.WARNING))
+          LOGGER.log(Level.WARNING, e.getMessage(), e);
+        
+        os.sendError(e.getError());
+      }
     }
+    else
+      os.sendError(UNSUPORTED_MEDIA_TYPE_ERROR);
   }
   
   /**
@@ -254,7 +266,7 @@ public final class HTTPContextHandler implements Runnable {
      
     @Override
     public boolean authenticate(final HTTPResponse response) {
-      return false;
+      return false; //TODO: Implement ME!!
     }
     
     @Override
@@ -292,7 +304,7 @@ public final class HTTPContextHandler implements Runnable {
     
     @Override
     public Part getPart(final String name) {
-      return null; //TODO: Implement ME!!
+      return requestParts.get(name);
     }
 
     @Override
@@ -307,7 +319,7 @@ public final class HTTPContextHandler implements Runnable {
     
     @Override
     public String getRequestURI() {
-      return uri; //TODO: Implement ME!!
+      return uri;
     }
     
     @Override

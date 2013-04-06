@@ -16,7 +16,7 @@
  */
 package br.com.is.http.server;
 
-public class HTTPContext {
+public abstract class HTTPContext {
   public void doDelete(final HTTPRequest req, final HTTPResponse resp) {
     resp.setStatus(405);
   }
@@ -43,5 +43,15 @@ public class HTTPContext {
   
   public void doTrace(final HTTPRequest req, final HTTPResponse resp) {
     resp.setStatus(405);
+  }
+  
+  //TODO: Implement the annotation to inject this information!
+  public String getTempDirectory() {
+    return System.getProperty("java.io.tmpdir");
+  }
+  
+  //TODO: Implement ME!!
+  public long getMaxContentLenght() {
+    return Long.MAX_VALUE;
   }
 }
