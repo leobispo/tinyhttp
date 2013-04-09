@@ -92,4 +92,8 @@ public class HTTPSession {
   public void removeAttribute(final String name) {
     attributes.remove(name);
   }
+  
+  //TODO: Information about the creation date and time
+  
+  //TODO: A method to invalidate this object!
 }

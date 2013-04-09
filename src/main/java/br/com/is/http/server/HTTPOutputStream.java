@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import br.com.is.http.server.encoder.Encoder;
 import br.com.is.nio.ByteBufferFifo;
 import br.com.is.nio.EventLoop;
 import br.com.is.nio.listener.WriterListener;
@@ -47,7 +48,8 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
   
   private ByteBuffer buffer   = null;
   
-  private final ByteBufferFifo fifo = new ByteBufferFifo();
+  private ByteBuffer           header = null;
+  private final ByteBufferFifo fifo   = new ByteBufferFifo();
   
   private AtomicInteger             responseStatus  = null;
   private List<Cookie>              responseCookies = null;
@@ -55,6 +57,8 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
 
   private boolean headerCreated = false;
   private boolean ignoreData    = false;
+  
+  private Encoder encoder       = null;
   
   public HTTPOutputStream(final HTTPChannel channel, final EventLoop manager) {
     this.channel = channel;
@@ -88,7 +92,12 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
     if (ignoreData)
       return;
 
-    while (length > 0) { //TODO: USE THE RIGHT ENCODER!!
+    if (encoder != null && !encoder.isFinished()) {
+      encoder.compress(source, offset, length);
+      return;
+    }
+    
+    while (length > 0) {
       ByteBuffer next = fifo.getWriteBuffer();
       if (next == null)
         return;
@@ -96,7 +105,7 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
       int bytesToWrite = length;
       if (next.remaining() < bytesToWrite)
         bytesToWrite = next.remaining();
-
+      
       next.put(source, offset, bytesToWrite);
       offset += bytesToWrite;
       length -= bytesToWrite;
@@ -105,6 +114,9 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
 
   @Override
   public void flush() {
+    if (encoder != null && !encoder.isFinished())
+      return;
+
     if (!headerCreated) {
 /**
   response-header = Accept-Ranges           ; Section 14.5
@@ -129,6 +141,13 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
           sb.append(entry.getKey()).append('=').append(entry.getValue()).append("\r\n");
       }
       
+      sb.append("Connection: close\r\n");
+      
+      if (encoder != null) {
+        sb.append("Content-Encoding: ").append(encoder.getType()).append("\r\n");
+        // sb.append("Transfer-Encoding: gzip, chunked\r\n"); - TODO: Implement ME!!
+      }
+      
       if (responseCookies != null) {
         for (Cookie cookie : responseCookies)
           sb.append("Set-Cookie: ").append(cookie).append("\r\n");
@@ -139,8 +158,7 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
       Charset charset = Charset.forName("ASCII");
       CharsetEncoder encoder = charset.newEncoder();
       try {
-        ByteBuffer buffer = encoder.encode(CharBuffer.wrap(header));
-        fifo.prependByteBuffer(buffer);
+        this.header = encoder.encode(CharBuffer.wrap(header));
       }
       catch (CharacterCodingException e) {
         // TODO Auto-generated catch block
@@ -160,7 +178,11 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
   @Override
   public void write(final SelectableChannel ch, final EventLoop manager) {
     for (;;) {
-      if (buffer == null)
+      if (header != null) {
+        buffer = header;
+        header = null;
+      }
+      else if (buffer == null)
         buffer = fifo.getReadBuffer();
 
       if (buffer == null)
@@ -208,6 +230,18 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
       responseStatus.set(error);
     
     flush();
+  }
+  
+  public void flushCompressed() {
+    if (encoder != null) {
+      byte compressed[] = encoder.finish();
+      write(compressed, 0, compressed.length);
+    }
+    flush();
+  }
+
+  public void setEncoder(final Encoder encoder) {
+    this.encoder = encoder;
   }
   
   private String getReasonPhrase(int status) {

@@ -16,13 +16,14 @@ public class Test {
     server.addContext("/test.html", new HTTPContext() {
 
       @Override
-      public void doPost(HTTPRequest req, HTTPResponse resp) {
+      public void doGet(HTTPRequest req, HTTPResponse resp) {
         HTTPSession session = req.getSession();
         OutputStream ou = resp.getOutputStream();
 
         session.setAttribute("Teste", "Test");
         try {
-          ou.write("abc".getBytes());
+          ou.write("abc abc abc abc abc abc abc def jhiabc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi".getBytes());
+          ou.write("TEST".getBytes());
           ou.flush();
         }
         catch (IOException e) {

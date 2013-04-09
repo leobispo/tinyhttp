@@ -30,7 +30,6 @@ final class HTTPChannel {
   private final EventLoop     manager;
   private ByteBuffer          remainingData;
   
-  //TODO: Must create also a way to do gzip!
   HTTPChannel(final SocketChannel channel, final SSLContext sslContext, final EventLoop manager) {
     this.channel    = channel;
     this.sslContext = sslContext;

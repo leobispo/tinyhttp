@@ -25,16 +25,21 @@ import java.security.NoSuchAlgorithmException;
 import java.security.Principal;
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.StringTokenizer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import br.com.is.http.server.encoder.Encoder;
+import br.com.is.http.server.encoder.GZIPEncoder;
 import br.com.is.http.server.exception.HTTPRequestException;
 import br.com.is.http.server.mediatype.ApplicationXwwwFormURLEncode;
 import br.com.is.http.server.mediatype.HTTPMediaType;
@@ -43,7 +48,7 @@ import br.com.is.nio.EventLoop;
 import br.com.is.nio.listener.ReaderListener;
 
 final class HTTPContextHandler implements Runnable {
-  private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+  private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
   private static final int LENGTH_REQUIRED_ERROR            = 411;
   private static final int REQUEST_ENTITY_TOO_LARGE_ERROR   = 413;
@@ -51,13 +56,16 @@ final class HTTPContextHandler implements Runnable {
   
   private static final String M_DIGEST_ALGORITHM            = "MD5";
   
-  private final static String SESSION_COOKIE_NAME           = "ISSESSIONID";
+  private static final String SESSION_COOKIE_NAME           = "ISSESSIONID";
   
+  private static final String ACCEPT_ENCODING               = "accept-encoding";
   private static final String CONTENT_LENGTH                = "content-length";
   private static final String CONTENT_TYPE                  = "content-type";
   
   private static final String MULTIPART_FORM_DATA           = "multipart/form-data";
   private static final String APPLICATION_X_FORM_URL_ENCODE = "application/x-www-form-urlencoded";
+  
+  private static final String GZIP_ENCODER                  = "gzip";
   
   private enum OutputType { NONE, OUTPUT_STREAM, PRINT_WRITER };
 
@@ -82,11 +90,17 @@ final class HTTPContextHandler implements Runnable {
   private final HTTPOutputStream                      os;
   
   private static final Map<String, HTTPMediaType>     mediaTypes = new Hashtable<>();
+  private static final Map<String, Encoder>           encoders = new Hashtable<>();
+
   static {
     mediaTypes.put(MULTIPART_FORM_DATA          , new MultipartFormData()           );
     mediaTypes.put(APPLICATION_X_FORM_URL_ENCODE, new ApplicationXwwwFormURLEncode());
   }
-    
+  
+  static {
+    encoders.put(GZIP_ENCODER, new GZIPEncoder());
+  }
+  
   public HTTPContextHandler(final HTTPRequest.RequestMethod method, final String uri, final HTTPContext context, final HTTPChannel channel, final EventLoop manager,
     final ConcurrentHashMap<String, HTTPSession> sessions, final Hashtable<String, Cookie> cookies, final Hashtable<String, String> header,
     final Hashtable<String, String> params, final HTTPOutputStream os, final ReaderListener keepALive) {
@@ -130,14 +144,12 @@ final class HTTPContextHandler implements Runnable {
                  | Date                     ; Section 14.18
                  | Pragma                   ; Section 14.32
                  | Trailer                  ; Section 14.40
-                 | Transfer-Encoding        ; Section 14.41
                  | Upgrade                  ; Section 14.42
                  | Via                      ; Section 14.45
                  | Warning                  ; Section 14.46
 
   request-header = Accept                   ; Section 14.1
                  | Accept-Charset           ; Section 14.2
-                 | Accept-Encoding          ; Section 14.3
                  | Accept-Language          ; Section 14.4
                  | Authorization            ; Section 14.8
                  | Expect                   ; Section 14.20
@@ -155,13 +167,31 @@ final class HTTPContextHandler implements Runnable {
                  | TE                       ; Section 14.39
                  | User-Agent               ; Section 14.43
  */
+    if (requestHeader.containsKey(ACCEPT_ENCODING) && context.useCodeEncoding()) {
+      List<HTTPEncoder> list = parseEncoder(requestHeader.get(ACCEPT_ENCODING));
+      for (HTTPEncoder encoder : list) {
+        Encoder toUse = encoders.get(encoder.value);
+
+        if (toUse != null) {
+          try {
+            toUse = toUse.getClass().newInstance();
+          }
+          catch (InstantiationException  | IllegalAccessException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+          }
+
+          os.setEncoder(toUse);
+          break;
+        }
+      }
+    }
+
     switch (method) {
-      case GET:
-        context.doGet(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), new HTTPResponseImpl());
-      break;
       case HEAD:
         os.setIgnoreData(true);
-        context.doHead(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), new HTTPResponseImpl());
+      case GET:
+        context.doGet(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), new HTTPResponseImpl());
       break;
       case POST:
         processPOST();
@@ -180,7 +210,7 @@ final class HTTPContextHandler implements Runnable {
       break;
     }
 
-    os.flush();
+    os.flushCompressed();
 
     if (keepAlive != null) {
       keepAlive.read(channel.getSocketChannel(), manager);
@@ -513,5 +543,39 @@ final class HTTPContextHandler implements Runnable {
     public void sendError(int error) {
       os.sendError(error);
     }
+  }
+  
+  private class HTTPEncoder {
+    public float  q = 1.0f;
+    public String value;
+  }
+  
+  private List<HTTPEncoder> parseEncoder(final String encoder) {
+    final List<HTTPEncoder> ret = new ArrayList<>();
+    final StringTokenizer st = new StringTokenizer(encoder, ",");
+    while (st.hasMoreTokens()) {
+      final HTTPEncoder element = new HTTPEncoder();
+      final String token = st.nextToken().trim();
+      final int idx = token.indexOf(";q=");
+      
+      if (idx != -1) {
+        element.q = Float.parseFloat(token.substring(idx + 3).trim());
+        element.value = token.substring(0, idx).trim().toLowerCase();
+      }
+      else
+        element.value = token.trim().toLowerCase();
+      
+      ret.add(element);
+    }
+    
+    Collections.sort(ret, new Comparator<HTTPEncoder>() {
+
+      @Override
+      public int compare(HTTPEncoder o1, HTTPEncoder o2) {
+        return (int) (o1.q - o2.q);
+      }
+    });
+    
+    return ret;
   }
 }

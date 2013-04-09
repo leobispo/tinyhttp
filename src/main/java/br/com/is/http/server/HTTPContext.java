@@ -24,10 +24,6 @@ public abstract class HTTPContext {
   public void doGet(final HTTPRequest req, final HTTPResponse resp) { 
     resp.setStatus(405);
   }
-  
-  public void doHead(final HTTPRequest req, final HTTPResponse resp) {
-    resp.setStatus(405);
-  }
 
   public void doOptions(final HTTPRequest req, final HTTPResponse resp) {
     resp.setStatus(405);
@@ -53,5 +49,10 @@ public abstract class HTTPContext {
   //TODO: Implement ME!!
   public long getMaxContentLenght() {
     return Long.MAX_VALUE;
+  }
+  
+  //TODO: Implement ME!!
+  public boolean useCodeEncoding() {
+    return true;
   }
 }
