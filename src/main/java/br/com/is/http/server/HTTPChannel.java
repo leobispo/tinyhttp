@@ -30,10 +30,16 @@ final class HTTPChannel {
   private final EventLoop     manager;
   private ByteBuffer          remainingData;
   
+  private final SSLChannel    sslChannel;
+  
   HTTPChannel(final SocketChannel channel, final SSLContext sslContext, final EventLoop manager) {
     this.channel    = channel;
     this.sslContext = sslContext;
     this.manager    = manager;
+    if (sslContext != null)
+      sslChannel = new SSLChannel(channel, sslContext, manager);
+    else
+      sslChannel = null;
   }
   
   SocketChannel getSocketChannel() {
@@ -41,17 +47,32 @@ final class HTTPChannel {
   }
 
   boolean handshake() {
+    if (sslChannel != null) {
+      try {
+        return sslChannel.handshake();
+      }
+      catch (IOException e) {
+        // TODO Auto-generated catch block
+        e.printStackTrace();
+      }
+    }
+    
     return true;
   }
 
-  long write(final ByteBuffer buffer) throws IOException {
+  long read(final ByteBuffer buffer) throws IOException {
     if (buffer == null)
-      return -1;
+      return 0;
     
-    //TODO: MUST CHECK IF IT IS SSL
-    return channel.write(buffer);
+    if (remainingData != null)
+      return moveRemaining(buffer, -1);
+    
+    if (sslChannel != null)
+      return sslChannel.read(buffer);
+    
+    return channel.read(buffer);
   }
-  
+
   private long moveRemaining(final ByteBuffer buffer, int maxLength) {
     if (maxLength == -1) maxLength = buffer.remaining();
     int maxTransfer = Math.min(remainingData.remaining(), maxLength);
@@ -66,18 +87,7 @@ final class HTTPChannel {
     
     return maxTransfer;
   }
-  long read(final ByteBuffer buffer) throws IOException {
-    if (buffer == null)
-      return 0;
-    
-    if (remainingData != null) {
-      return moveRemaining(buffer, -1);
-    }
-    
-    //TODO: MUST CHECK IF IT IS SSL
-    return channel.read(buffer);
-  }
-  
+
   long read(final ByteBuffer buffer, int maxLength) throws IOException {
     if (buffer == null)
       return 0;
@@ -85,38 +95,54 @@ final class HTTPChannel {
     if (remainingData != null)
       return moveRemaining(buffer, maxLength);
     
-    int len = channel.read(buffer);
+    int len = 0;
+    if (sslContext != null)
+      len = sslChannel.read(buffer);
+    else
+      len = channel.read(buffer);
     
     if (len > maxLength) {
       remainingData = ByteBuffer.allocate(buffer.limit());
-      remainingData.put(buffer.array(), maxLength - 1, buffer.limit() - maxLength);
+      try {
+        remainingData.put(buffer.array(), maxLength - 1, buffer.limit() - maxLength);
+      }
+      catch (Exception e) {
+        System.out.println("HERE");
+      }
       buffer.limit(maxLength + 1);
 
       remainingData.position(maxLength);
       remainingData.compact();
       remainingData.flip();
     }
-    
-    //TODO: MUST CHECK IF IT IS SSL
+
     return (len < maxLength) ? len : maxLength;
   }
   
-  boolean shutdown() throws IOException {
-    return true;
+  long write(final ByteBuffer buffer) throws IOException {
+    if (buffer == null)
+      return -1;
+    
+    if (sslChannel != null) {}
+//      return sslChannel.write(buffer);
+
+    return channel.write(buffer);    
   }
 
   void close() throws IOException {
+//    if (sslChannel != null && sslChannel.isFinishedHandshake())
+//      sslChannel.shutdown();
     manager.unregisterWriterListener(channel);
     manager.unregisterReaderListener(channel);
     channel.close();
   }
   
-  SSLContext getSSLContext() {
-    return sslContext;
-  }
-  
   void setRemaining(final ByteBuffer buffer) {
     if (buffer.hasRemaining())
       remainingData = buffer;
+  }
+  
+  boolean isSSL() {
+    return sslContext != null;
   }
 }

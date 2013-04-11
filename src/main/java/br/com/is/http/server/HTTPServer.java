@@ -16,16 +16,20 @@
  */
 package br.com.is.http.server;
 
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.security.KeyStore;
 import java.util.Hashtable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManagerFactory;
 
 import br.com.is.nio.EventLoop;
 import br.com.is.nio.listener.AcceptListener;
@@ -38,6 +42,8 @@ import br.com.is.nio.listener.AcceptListener;
  */
 public final class HTTPServer implements Runnable, AcceptListener {
   enum Type { HTTP, HTTPS }
+  
+  private SSLContext sslContext;
   
   private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
   
@@ -155,8 +161,16 @@ public final class HTTPServer implements Runnable, AcceptListener {
       throw new RuntimeException("Problems to accept a new HTTP connection", e);
     }
     
-    manager.registerReaderListener(socket, new HTTPRequestHandler(new HTTPChannel(socket, createSSLContext(type), manager),
-      contexts, sessions, manager));
+    try {
+      manager.registerReaderListener(socket, new HTTPRequestHandler(new HTTPChannel(socket, createSSLContext(type), manager),
+        contexts, sessions, manager));
+    }
+    catch (Exception e) {
+      if (LOGGER.isLoggable(Level.SEVERE))
+        LOGGER.log(Level.SEVERE, "Problems to accept a new HTTP connection", e);
+
+      throw new RuntimeException("Problems to accept a new HTTP connection", e);
+    }
   }
 
   /**
@@ -185,7 +199,24 @@ public final class HTTPServer implements Runnable, AcceptListener {
    * @return The SSL Context or null if it is HTTP.
    * 
    */
-  private SSLContext createSSLContext(final Type type) {
-    return null; //TODO: IMPLEMENT ME!!
+  private SSLContext createSSLContext(final Type type) throws Exception {
+    if (sslContext == null && type == Type.HTTPS) {
+      char[] passphrase = "password".toCharArray();
+
+      KeyStore ks = KeyStore.getInstance("JKS");
+      ks.load(new FileInputStream("testkeys"), passphrase);
+
+      KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
+      kmf.init(ks, passphrase);
+
+      TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
+      tmf.init(ks);
+
+      SSLContext sslContext = SSLContext.getInstance("TLS");
+      sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
+      
+      return sslContext;
+    }
+    return sslContext;
   }
 }

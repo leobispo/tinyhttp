@@ -11,20 +11,22 @@ public class Test {
   public static void main(String... args) throws InterruptedException, IOException {
     LogManager.getLogManager().getLogger(Logger.GLOBAL_LOGGER_NAME).setLevel(Level.FINE); 
  
-    HTTPServer server = new HTTPServer(new InetSocketAddress("localhost", 9999), 10, HTTPServer.Type.HTTP);
+    HTTPServer server = new HTTPServer(new InetSocketAddress("localhost", 9999), 10, HTTPServer.Type.HTTPS);
 
     server.addContext("/test.html", new HTTPContext() {
 
       @Override
-      public void doGet(HTTPRequest req, HTTPResponse resp) {
+      public void doPost(HTTPRequest req, HTTPResponse resp) {
+        //resp.sendRedirect("http://www.google.com.br");
         HTTPSession session = req.getSession();
         OutputStream ou = resp.getOutputStream();
 
         session.setAttribute("Teste", "Test");
         try {
-          ou.write("abc abc abc abc abc abc abc def jhiabc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi abc abc abc abc def jhi".getBytes());
-          ou.write("TEST".getBytes());
+          ou.write("abc abc".getBytes());
+          
           ou.flush();
+          ou.write("\r\n\r\nTEST".getBytes());
         }
         catch (IOException e) {
           e.printStackTrace();

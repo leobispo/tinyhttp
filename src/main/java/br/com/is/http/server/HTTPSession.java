@@ -18,6 +18,7 @@ package br.com.is.http.server;
 
 import java.util.Enumeration;
 import java.util.Hashtable;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * This class will store information related to an HTTP Session. Since HTTP is a stateless protocol, we
@@ -28,7 +29,11 @@ import java.util.Hashtable;
  *
  */
 public class HTTPSession {
-  private final Hashtable<String, Object> attributes = new Hashtable<>();
+  private final Hashtable<String, Object>              attributes = new Hashtable<>();
+  private final ConcurrentHashMap<String, HTTPSession> sessions;
+  
+  private long         lastAccessTime = System.currentTimeMillis();
+  private final long   creationTime   = System.currentTimeMillis();
   private final String id;
   
   /**
@@ -37,8 +42,9 @@ public class HTTPSession {
    * @param id HTTP Session unique id.
    * 
    */
-  HTTPSession(final String id) {
-    this.id = id;
+  HTTPSession(final String id, final ConcurrentHashMap<String, HTTPSession> sessions) {
+    this.id       = id;
+    this.sessions = sessions;
   }
   
   /**
@@ -93,7 +99,40 @@ public class HTTPSession {
     attributes.remove(name);
   }
   
-  //TODO: Information about the creation date and time
+  /**
+   * Return the session creation time.
+   * 
+   * @return Session creation time.
+   * 
+   */
+  public long getCreationTime() {
+    return creationTime;
+  }
+
+  /**
+   * Returns the last session access time.
+   * 
+   * @return Last session access time.
+   * 
+   */
+  public long getLastAccessTime() {
+    return lastAccessTime;
+  }
+
+  /**
+   * Invalidate this session. It will remove the session ID from the sessions list.
+   * 
+   */
+  public void invalidate() {
+    sessions.remove(this);
+  }
   
-  //TODO: A method to invalidate this object!
+  /**
+   * Internal method used to set the last access time.
+   * 
+   * @param lastAccessTime Last access time.
+   */
+  void setLastAccessTime(final long lastAccessTime) {
+    this.lastAccessTime = lastAccessTime;
+  }
 }

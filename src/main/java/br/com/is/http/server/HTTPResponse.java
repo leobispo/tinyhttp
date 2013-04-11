@@ -33,13 +33,11 @@ public interface HTTPResponse {
   
   public int getStatus();
 
-  public void sendRedirect(final String location);
+  public void sendRedirect(final String location) throws IllegalStateException;
   
   public void setStatus(int sc);
   
   public OutputStream getOutputStream();
   
   public PrintWriter getWriter();
-  
-  public void sendError(int error);
 }

@@ -25,9 +25,12 @@ import java.nio.channels.SelectableChannel;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
@@ -41,7 +44,12 @@ import br.com.is.nio.listener.WriterListener;
 final class HTTPOutputStream extends OutputStream implements WriterListener {
   private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
-  private final EventLoop manager;
+  private static final SimpleDateFormat fmt = new SimpleDateFormat("EEE, dd MMM yyyy hh:mm:ss z");
+  static {
+    fmt.setTimeZone(TimeZone.getTimeZone("GMT"));
+  }
+  
+  private final EventLoop   manager;
   private final HTTPChannel channel;
   
   private final Semaphore sem = new Semaphore(0);
@@ -57,7 +65,7 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
 
   private boolean headerCreated = false;
   private boolean ignoreData    = false;
-  
+
   private Encoder encoder       = null;
   
   public HTTPOutputStream(final HTTPChannel channel, final EventLoop manager) {
@@ -89,46 +97,21 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
 
   @Override                                                              
   public void write(byte[] source, int offset, int length) {
-    if (ignoreData)
-      return;
-
-    if (encoder != null && !encoder.isFinished()) {
-      encoder.compress(source, offset, length);
-      return;
+    if (encoder != null) {
+      try {
+        encoder.compress(source, offset, length);
+      }
+      catch (IOException e) {
+        throw new RuntimeException("Problems to compress data using an encoder.", e);
+      }
     }
-    
-    while (length > 0) {
-      ByteBuffer next = fifo.getWriteBuffer();
-      if (next == null)
-        return;
-
-      int bytesToWrite = length;
-      if (next.remaining() < bytesToWrite)
-        bytesToWrite = next.remaining();
-      
-      next.put(source, offset, bytesToWrite);
-      offset += bytesToWrite;
-      length -= bytesToWrite;
-    }
+    else
+      writeImpl(source, offset, length);
   }
-
+  
   @Override
   public void flush() {
-    if (encoder != null && !encoder.isFinished())
-      return;
-
     if (!headerCreated) {
-/**
-  response-header = Accept-Ranges           ; Section 14.5
-                  | Age                     ; Section 14.6
-                  | ETag                    ; Section 14.19
-                  | Location                ; Section 14.30
-                  | Proxy-Authenticate      ; Section 14.33
-                  | Retry-After             ; Section 14.37
-                  | Server                  ; Section 14.38
-                  | Vary                    ; Section 14.44
-                  | WWW-Authenticate        ; Section 14.47
- */
       final StringBuilder sb = new StringBuilder();
       sb.append("HTTP/1.1 ")
         .append(responseStatus.get())
@@ -138,14 +121,18 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
       
       if (responseHeader != null) {
         for (Map.Entry<String,String> entry : responseHeader.entrySet())
-          sb.append(entry.getKey()).append('=').append(entry.getValue()).append("\r\n");
+          sb.append(entry.getKey()).append(": ").append(entry.getValue()).append("\r\n");
       }
       
-      sb.append("Connection: close\r\n");
+      long date = System.currentTimeMillis();
+      Timestamp timestamp = new Timestamp(date);
       
+      sb.append("Date: ").append(fmt.format(timestamp)).append("\r\n");
+      sb.append("Connection: close\r\n");
+
       if (encoder != null) {
         sb.append("Content-Encoding: ").append(encoder.getType()).append("\r\n");
-        // sb.append("Transfer-Encoding: gzip, chunked\r\n"); - TODO: Implement ME!!
+        sb.append("Transfer-Encoding: chunked\r\n");
       }
       
       if (responseCookies != null) {
@@ -161,13 +148,30 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
         this.header = encoder.encode(CharBuffer.wrap(header));
       }
       catch (CharacterCodingException e) {
-        // TODO Auto-generated catch block
-        e.printStackTrace();
+        throw new RuntimeException("Problems To create a Header", e);
       }
 
       headerCreated = true;
     }
     
+    if (encoder != null) {
+      byte array[];
+      try {
+        array = encoder.flush();
+      }
+      catch (IOException ie) {
+        throw new RuntimeException("Problems with the encoding method", ie);
+      }
+      
+      if (array == null)
+        return;
+      
+      String str = Integer.toHexString(array.length) + "\r\n";
+      writeImpl(str.getBytes(), 0, str.length());
+      writeImpl(array, 0, array.length);
+      writeImpl("\r\n".getBytes(), 0, "\r\n".length());
+    }
+
     write(channel.getSocketChannel(), manager);
     try {
       sem.acquire();
@@ -232,16 +236,43 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
     flush();
   }
   
-  public void flushCompressed() {
-    if (encoder != null) {
-      byte compressed[] = encoder.finish();
-      write(compressed, 0, compressed.length);
-    }
+  void flushCompressed() {
     flush();
+    if (encoder != null) {
+      writeImpl("0\r\n\r\n".getBytes(), 0, "0\r\n\r\n".length());
+      write(channel.getSocketChannel(), manager);
+    }
   }
 
   public void setEncoder(final Encoder encoder) {
     this.encoder = encoder;
+  }
+
+  private void writeImpl(byte[] source, int offset, int length) {
+    if (ignoreData) 
+      return;
+    
+    while (length > 0) {
+      ByteBuffer next = fifo.getWriteBuffer();
+      if (next == null)
+        return;
+
+      int bytesToWrite = length;
+      if (next.remaining() < bytesToWrite)
+        bytesToWrite = next.remaining();
+      
+      next.put(source, offset, bytesToWrite);
+      offset += bytesToWrite;
+      length -= bytesToWrite;
+    }
+  }
+
+  void clear() {
+    fifo.clear();  
+  }
+  
+  boolean isHeaderCreated() {
+    return headerCreated;
   }
   
   private String getReasonPhrase(int status) {

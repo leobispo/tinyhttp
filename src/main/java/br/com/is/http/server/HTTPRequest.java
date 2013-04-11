@@ -17,23 +17,13 @@
 package br.com.is.http.server;
 
 import java.io.InputStream;
-import java.security.Principal;
 import java.util.Enumeration;
 import java.util.List;
-import java.util.Map;
 
 public interface HTTPRequest { 
   public enum RequestMethod { POST, GET, PUT, HEAD, DELETE, TRACE, OPTIONS };
-
-  public enum AuthType { BASIC_AUTH, FORM_AUTH, CLIENT_CERT_AUTH, DIGEST_AUTH, NONE_AUTH };
-  
-  public boolean authenticate(final HTTPResponse response);
-  
-  public AuthType getAuthType();
   
   public List<Cookie> getCookies();
-  
-  public long getDateHeader(final String name);
   
   public String getHeader(final String name);
   
@@ -42,9 +32,7 @@ public interface HTTPRequest {
   public RequestMethod getMethod();
   
   public Part getPart(final String name);
-  
-  public String getRemoteUser();
-  
+
   public String getRequestedSessionId();
   
   public String getRequestURI();
@@ -53,19 +41,9 @@ public interface HTTPRequest {
   
   public HTTPSession getSession();
   
-  public Principal getUserPrincipal();
-  
-  boolean isUserInRole(final String role);
-  
-  public void login(final String username, final String password);
-  
-  public void logout();
-  
   public String getParameter(final String name);
-  
-  public Map<String, String> getParameterMap();
-  
-  public Enumeration<String>  getParameterNames();
+
+  public Enumeration<String> getParameterNames();
   
   public InputStream getInputStream();
 }

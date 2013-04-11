@@ -22,7 +22,6 @@ import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.Principal;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -50,6 +49,7 @@ import br.com.is.nio.listener.ReaderListener;
 final class HTTPContextHandler implements Runnable {
   private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
+  private static final int TEMPORARY_REDIRECT               = 307;
   private static final int LENGTH_REQUIRED_ERROR            = 411;
   private static final int REQUEST_ENTITY_TOO_LARGE_ERROR   = 413;
   private static final int UNSUPORTED_MEDIA_TYPE_ERROR      = 415;
@@ -122,8 +122,12 @@ final class HTTPContextHandler implements Runnable {
     this.keepAlive      = keepALive;
     
     Cookie sessionCookie = requestCookies.get(SESSION_COOKIE_NAME);
-    if (sessionCookie != null)
+    if (sessionCookie != null) {
+      //TODO: Update the expire queue with the newest access time.
       session = sessions.get(sessionCookie.getValue());
+      if (session != null)
+        session.setLastAccessTime(System.currentTimeMillis());
+    }
     else
       session = null;
     
@@ -137,36 +141,6 @@ final class HTTPContextHandler implements Runnable {
 
   @Override
   public void run() {
-
-/** TODO: Implement what must be implemented!!
-  general-header = Cache-Control            ; Section 14.9
-                 | Connection               ; Section 14.10
-                 | Date                     ; Section 14.18
-                 | Pragma                   ; Section 14.32
-                 | Trailer                  ; Section 14.40
-                 | Upgrade                  ; Section 14.42
-                 | Via                      ; Section 14.45
-                 | Warning                  ; Section 14.46
-
-  request-header = Accept                   ; Section 14.1
-                 | Accept-Charset           ; Section 14.2
-                 | Accept-Language          ; Section 14.4
-                 | Authorization            ; Section 14.8
-                 | Expect                   ; Section 14.20
-                 | From                     ; Section 14.22
-                 | Host                     ; Section 14.23
-                 | If-Match                 ; Section 14.24
-                 | If-Modified-Since        ; Section 14.25
-                 | If-None-Match            ; Section 14.26
-                 | If-Range                 ; Section 14.27
-                 | If-Unmodified-Since      ; Section 14.28
-                 | Max-Forwards             ; Section 14.31
-                 | Proxy-Authorization      ; Section 14.34
-                 | Range                    ; Section 14.35
-                 | Referer                  ; Section 14.36
-                 | TE                       ; Section 14.39
-                 | User-Agent               ; Section 14.43
- */
     if (requestHeader.containsKey(ACCEPT_ENCODING) && context.useCodeEncoding()) {
       List<HTTPEncoder> list = parseEncoder(requestHeader.get(ACCEPT_ENCODING));
       for (HTTPEncoder encoder : list) {
@@ -175,14 +149,13 @@ final class HTTPContextHandler implements Runnable {
         if (toUse != null) {
           try {
             toUse = toUse.getClass().newInstance();
+            os.setEncoder(toUse);
+            break;
           }
           catch (InstantiationException  | IllegalAccessException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
+            if (LOGGER.isLoggable(Level.WARNING))
+              LOGGER.log(Level.WARNING, "Problems to create a new instance for the Encoder: " + encoder.value);
           }
-
-          os.setEncoder(toUse);
-          break;
         }
       }
     }
@@ -194,7 +167,7 @@ final class HTTPContextHandler implements Runnable {
         context.doGet(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), new HTTPResponseImpl());
       break;
       case POST:
-        processPOST();
+        processPOST(); //TODO: Implement Transfer-Encoding:
       break;
       case PUT:
         context.doPut(null, null);
@@ -237,7 +210,7 @@ final class HTTPContextHandler implements Runnable {
       }
 
       contentLength = Long.parseLong(length);
-      if (contentLength < context.getMaxContentLenght()) {
+      if (contentLength > context.getMaxContentLenght()) {
         os.sendError(REQUEST_ENTITY_TOO_LARGE_ERROR);
         return;
       }
@@ -293,28 +266,13 @@ final class HTTPContextHandler implements Runnable {
     public HTTPRequestImpl(final HTTPInputStream is) {
       this.is = is;
     }
-     
-    @Override
-    public boolean authenticate(final HTTPResponse response) {
-      return false; //TODO: Implement ME!!
-    }
-    
-    @Override
-    public AuthType getAuthType() {
-      return AuthType.NONE_AUTH; //TODO: Implement ME!!
-    }
-    
+
     @Override
     public List<Cookie> getCookies() {
       if (cookies == null)
         cookies = new ArrayList<>(requestCookies.values());
       
       return cookies;
-    }
-    
-    @Override
-    public long getDateHeader(final String name) {
-      return 0; //TODO: Implement ME!!
     }
     
     @Override
@@ -336,15 +294,13 @@ final class HTTPContextHandler implements Runnable {
     public Part getPart(final String name) {
       return requestParts.get(name);
     }
-
-    @Override
-    public String getRemoteUser() {
-      return ""; //TODO: Implement ME!!
-    }
     
     @Override
     public String getRequestedSessionId() {
-      return ""; //TODO: Implement ME!!
+      if (session != null)
+        return session.getId();
+      
+      return null;
     }
     
     @Override
@@ -355,7 +311,7 @@ final class HTTPContextHandler implements Runnable {
     @Override
     public StringBuffer getRequestURL() {
       final StringBuffer buffer = new StringBuffer();
-      if (channel.getSSLContext() != null)
+      if (channel.isSSL())
         buffer.append("https://");
       else
         buffer.append("http://");
@@ -373,35 +329,16 @@ final class HTTPContextHandler implements Runnable {
     @Override
     public HTTPSession getSession() {
       if (session == null) {
-        session = new HTTPSession(generateUID());
+        session = new HTTPSession(generateUID(), sessions);
         sessions.putIfAbsent(session.getId(), session);
 
+        //TODO: add this session to expire queue with the newest access time.
         responseCookies.add(new Cookie(SESSION_COOKIE_NAME, session.getId()));
       }
       
       return session;
     }
-    
-    @Override
-    public Principal getUserPrincipal() {
-      return null; //TODO: Implement ME!!
-    }
-    
-    @Override
-    public boolean isUserInRole(final String role) {
-      return false; //TODO: Implement ME!!
-    }
-    
-    @Override
-    public void login(final String username, final String password) {
-      //TODO: Implement ME!!
-    }
-    
-    @Override
-    public void logout() {
-      //TODO: Implement ME!!
-    }
-    
+
     @Override
     public String getParameter(final String name) {
       if (params == null)
@@ -409,12 +346,7 @@ final class HTTPContextHandler implements Runnable {
       
       return params.get(name);
     }
-    
-    @Override
-    public Map<String, String> getParameterMap() {
-      return params;
-    }
-    
+
     @Override
     public Enumeration<String> getParameterNames() {
       if (params == null)
@@ -511,7 +443,34 @@ final class HTTPContextHandler implements Runnable {
     }
 
     @Override
-    public void sendRedirect(String location) {
+    public void sendRedirect(String location) throws IllegalStateException {
+      if (os.isHeaderCreated())
+        throw new IllegalStateException("The header was already written to the channel");
+      
+      responseStatus.set(TEMPORARY_REDIRECT);
+      responseHeader.clear();
+      responseHeader.put("Location", location);
+      
+      // TODO: Maybe this should come from a template file.
+      final StringBuilder sb = new StringBuilder();
+      sb.append("<html>")
+        .append("<head>")
+        .append("<title>Moved</title>")
+        .append("</head><body>")
+        .append("<h1>Moved</h1>")
+        .append("<p>This page has moved to <a href='")
+        .append(location)
+        .append("'>")
+        .append(location)
+        .append("</a>.</p></body>")
+        .append("</html>");
+      
+      os.clear();
+      
+      final String page = sb.toString();
+      os.write(page.getBytes(), 0, page.length());
+      
+      os.setIgnoreData(true);
     }
 
     @Override
@@ -538,11 +497,6 @@ final class HTTPContextHandler implements Runnable {
       
       return null;
     }
-    
-    @Override
-    public void sendError(int error) {
-      os.sendError(error);
-    }
   }
   
   private class HTTPEncoder {
@@ -550,6 +504,14 @@ final class HTTPContextHandler implements Runnable {
     public String value;
   }
   
+  /**
+   * This method will parse the encoder list, returning a sorted list of it.
+   * 
+   * @param encoder String to be parsed.
+   * 
+   * @return Sorted list of encoders.
+   * 
+   */
   private List<HTTPEncoder> parseEncoder(final String encoder) {
     final List<HTTPEncoder> ret = new ArrayList<>();
     final StringTokenizer st = new StringTokenizer(encoder, ",");
@@ -569,7 +531,6 @@ final class HTTPContextHandler implements Runnable {
     }
     
     Collections.sort(ret, new Comparator<HTTPEncoder>() {
-
       @Override
       public int compare(HTTPEncoder o1, HTTPEncoder o2) {
         return (int) (o1.q - o2.q);

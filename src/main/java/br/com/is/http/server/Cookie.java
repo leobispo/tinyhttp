@@ -39,7 +39,7 @@ import java.util.TimeZone;
  *
  */
 public final class Cookie {
-  private static final SimpleDateFormat fmt = new SimpleDateFormat("EEE, dd-MMM-yyyy hh:mm:ss z");
+  private static final SimpleDateFormat fmt = new SimpleDateFormat("EEE, dd MMM yyyy hh:mm:ss z");
   static {
     fmt.setTimeZone(TimeZone.getTimeZone("GMT"));
   }

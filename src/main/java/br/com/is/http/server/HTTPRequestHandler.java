@@ -86,15 +86,18 @@ final class HTTPRequestHandler implements ReaderListener {
     this.contexts = contexts;
     this.sessions = sessions;
     
-    os = new HTTPOutputStream(channel, manager);
+    if (channel.isSSL())
+      os = null;
+    else    
+      os = new HTTPOutputStream(channel, manager);
   }
 
   @Override
-  public void read(final SelectableChannel ch, final EventLoop manager) { 
-    if (!channel.handshake()) {
-      sendError("Cannot execute the handshake", BAD_REQUEST_ERROR);
+  public void read(final SelectableChannel ch, final EventLoop manager) {
+    if (channel.isSSL() && !channel.handshake())
       return;
-    }
+    else if (os == null)
+      os = new HTTPOutputStream(channel, manager);
 
     long length = 0;
     do {
@@ -401,7 +404,6 @@ final class HTTPRequestHandler implements ReaderListener {
       sb.append((char) buffer.get());
     }
 
-    System.out.println(sb.toString());
     buffer.reset();
     buffer.compact();
 

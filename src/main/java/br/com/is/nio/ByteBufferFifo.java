@@ -42,7 +42,7 @@ public final class ByteBufferFifo {
    * 
    */
   public ByteBufferFifo() {
-    currentBuffer.set(ByteBuffer.allocateDirect(BUFFER_SIZE));
+    currentBuffer.set(ByteBuffer.allocate(BUFFER_SIZE));
   }
   
   /**
@@ -84,7 +84,7 @@ public final class ByteBufferFifo {
     do {
       buffer = currentBuffer.get();
       if (buffer == null || !buffer.hasRemaining()) {
-        if (currentBuffer.compareAndSet(buffer, ByteBuffer.allocateDirect(BUFFER_SIZE)) && buffer != null) {
+        if (currentBuffer.compareAndSet(buffer, ByteBuffer.allocate(BUFFER_SIZE)) && buffer != null) {
           buffer.flip();
           readBuffers.add(buffer);
         }
@@ -111,7 +111,7 @@ public final class ByteBufferFifo {
     ByteBuffer buffer = null;
     do {
       buffer = currentBuffer.get();
-      if (currentBuffer.compareAndSet(buffer, ByteBuffer.allocateDirect(BUFFER_SIZE)) && buffer != null) {
+      if (currentBuffer.compareAndSet(buffer, ByteBuffer.allocate(BUFFER_SIZE)) && buffer != null) {
         buffer.flip();
         readBuffers.add(buffer);
       }
@@ -152,5 +152,14 @@ public final class ByteBufferFifo {
    */
   public void prependByteBuffer(final ByteBuffer buffer) {
     readBuffers.push(buffer);
+  }
+  
+  /**
+   * Clear all the information from this FIFO.
+   * 
+   */
+  public void clear() {
+    readBuffers.clear();
+    currentBuffer.set(ByteBuffer.allocate(BUFFER_SIZE));
   }
 }

@@ -117,7 +117,8 @@ public final class EventLoop implements Runnable {
     }
   }
 
-  public void registerReaderListener(final SelectableChannel channel, final ReaderListener listener) {
+  public ReaderListener registerReaderListener(final SelectableChannel channel, final ReaderListener listener) {
+    ReaderListener oldListener = null;
     synchronized (sync) {
       SelectionKey key = channel.keyFor(selector);
       if (key == null || !key.isValid()) {
@@ -136,19 +137,22 @@ public final class EventLoop implements Runnable {
         }
       }
       else {
-        if ((key.interestOps() & SelectionKey.OP_READ) == 0) {
-          ((Object[]) key.attachment())[READ] = listener;
-          key.interestOps(key.interestOps() | SelectionKey.OP_READ);
-          try {
-            channel.register(selector, key.interestOps(), key.attachment());
-          }
-          catch (ClosedChannelException e) {
-            //TODO: HANDLE THE EXCEPTION!!
-          }
-          
-          selector.wakeup();
+        if ((key.interestOps() & SelectionKey.OP_READ) != 0)
+          oldListener = ((ReaderListener)((Object[]) key.attachment())[SelectionKey.OP_READ]);
+        
+        ((Object[]) key.attachment())[READ] = listener;
+        key.interestOps(key.interestOps() | SelectionKey.OP_READ);
+        try {
+          channel.register(selector, key.interestOps(), key.attachment());
         }
+        catch (ClosedChannelException e) {
+          //TODO: HANDLE THE EXCEPTION!!
+        }
+
+        selector.wakeup();
       }
+      
+      return oldListener;
     }
   }
   
@@ -176,7 +180,8 @@ public final class EventLoop implements Runnable {
     }
   }
   
-  public void registerWriterListener(final SelectableChannel channel, final WriterListener listener) {
+  public WriterListener registerWriterListener(final SelectableChannel channel, final WriterListener listener) {
+    WriterListener oldListener = null;
     synchronized (sync) {
       SelectionKey key = channel.keyFor(selector);
       if (key == null || !key.isValid()) {
@@ -195,22 +200,24 @@ public final class EventLoop implements Runnable {
         }
       }
       else {
-        if ((key.interestOps() & SelectionKey.OP_WRITE) == 0) {
-          ((Object[]) key.attachment())[WRITE] = listener;
-          key.interestOps(key.interestOps() | SelectionKey.OP_WRITE);
-          
-          try {
-            channel.register(selector, key.interestOps(), key.attachment());
-          }
-          catch (ClosedChannelException e) {
-            System.out.println("HERE");
-            //TODO: HANDLE THE EXCEPTION!!
-          }
-          
-          selector.wakeup();
+        if ((key.interestOps() & SelectionKey.OP_WRITE) != 0)
+          oldListener = ((WriterListener)((Object[]) key.attachment())[WRITE]);
+
+        ((Object[]) key.attachment())[WRITE] = listener;
+        key.interestOps(key.interestOps() | SelectionKey.OP_WRITE);
+
+        try {
+          channel.register(selector, key.interestOps(), key.attachment());
         }
+        catch (ClosedChannelException e) {
+          //TODO: HANDLE THE EXCEPTION!!
+        }
+
+        selector.wakeup();
       }
     }
+    
+    return oldListener;
   }
 
   public boolean unregisterWriterListener(final SelectableChannel channel) {
