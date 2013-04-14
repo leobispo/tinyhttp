@@ -185,16 +185,15 @@ final class HTTPInputStream extends InputStream implements ReaderListener {
   @Override
   public void read(SelectableChannel ch, EventLoop manager) {
     long length = -1;
-    do {
-      try {
-        length = channel.read(fifo.getWriteBuffer(), availableRead > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) availableRead);
-        availableRead -= length;
-      }
-      catch (IOException e) {
-        length = -1;
-      }
-    } while (length > 0 && availableRead > 0);
-    
+
+    try {
+      length = channel.read(fifo.getWriteBuffer(), availableRead > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) availableRead);
+      availableRead -= length;
+    }
+    catch (IOException e) {
+      length = -1;
+    }
+
     if (length == -1 || availableRead <= 0) {
       fifo.stop();
       isEof.set(true);

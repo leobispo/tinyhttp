@@ -4,12 +4,15 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectableChannel;
 import java.nio.channels.SocketChannel;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLEngineResult.HandshakeStatus;
 import javax.net.ssl.SSLEngineResult.Status;
+import javax.net.ssl.SSLException;
 
 import br.com.is.nio.EventLoop;
 import br.com.is.nio.listener.WriterListener;
@@ -21,14 +24,18 @@ class SSLChannel implements WriterListener {
   private final SSLEngine     sslEngine;
   private final SocketChannel channel;
 
-  private ByteBuffer buffer;
+  private ByteBuffer curBuffer;
   private ByteBuffer inBuffer;
   private ByteBuffer outBuffer;
 
-  private HandshakeStatus handshakeStatus    = HandshakeStatus.NEED_UNWRAP;
-  private boolean         handshakeCompleted = false;
-  private boolean         checkOutRemaining  = false;
-  private boolean         checkBufRemaining  = false;
+  private HandshakeStatus     handshakeStatus    = HandshakeStatus.NEED_UNWRAP;
+  private boolean             handshakeCompleted = false;
+  private boolean             checkOutRemaining  = false;
+  private boolean             checkBufRemaining  = false;
+  
+  private volatile boolean    isWriting          = false;
+  private WriterListener      oldListener        = null;
+  private final Semaphore     sem                = new Semaphore(0);
 
   protected SSLChannel(final SocketChannel channel, final SSLContext sslContext, final EventLoop manager) {
     this.channel = channel;
@@ -41,7 +48,7 @@ class SSLChannel implements WriterListener {
     
     inBuffer  = ByteBuffer.allocate(pbSize);
     outBuffer = ByteBuffer.allocate(pbSize);
-    buffer    = ByteBuffer.allocate(pbSize);
+    curBuffer = ByteBuffer.allocate(pbSize);
     
     outBuffer.position(0);
     outBuffer.limit(0);
@@ -55,7 +62,6 @@ class SSLChannel implements WriterListener {
         if (outBuffer.hasRemaining())
           return false;
 
-        //buffer.compact();
         manager.unregisterWriterListener(channel);
         checkOutRemaining = false;
       }
@@ -81,7 +87,7 @@ class SSLChannel implements WriterListener {
     if (!handshakeCompleted)
       return -1;
 
-    if (checkBufRemaining && buffer.hasRemaining())
+    if (checkBufRemaining && curBuffer.hasRemaining())
       return moveRemaining(dst, -1);
 
     if (channel.read(inBuffer) == -1)
@@ -90,7 +96,7 @@ class SSLChannel implements WriterListener {
     SSLEngineResult result;
     do {
       inBuffer.flip();
-      result = sslEngine.unwrap(inBuffer, buffer); 
+      result = sslEngine.unwrap(inBuffer, curBuffer); 
       inBuffer.compact();
       
       final Status status = result.getStatus();
@@ -107,11 +113,11 @@ class SSLChannel implements WriterListener {
       }
       else if (status == Status.BUFFER_OVERFLOW) {
         int pbSize = sslEngine.getSession().getPacketBufferSize();
-        if (buffer.remaining() < pbSize) {
-          ByteBuffer newBuffer = ByteBuffer.allocate(buffer.capacity() * 2);
-          buffer.flip();
-          newBuffer.put(buffer);
-          buffer = newBuffer;
+        if (curBuffer.remaining() < pbSize) {
+          ByteBuffer newBuffer = ByteBuffer.allocate(curBuffer.capacity() * 2);
+          curBuffer.flip();
+          newBuffer.put(curBuffer);
+          curBuffer = newBuffer;
         }
       }
       else {
@@ -120,11 +126,55 @@ class SSLChannel implements WriterListener {
     } while ((inBuffer.position() != 0) && result.getStatus() != Status.BUFFER_UNDERFLOW);
     
     if (result.getStatus() != Status.BUFFER_UNDERFLOW)
-      buffer.flip();
+      curBuffer.flip();
 
     return moveRemaining(dst, -1);
   }
 
+  public long write(final ByteBuffer buffer) {
+    outBuffer.clear();
+
+    SSLEngineResult result = null;
+    try {
+      result = sslEngine.wrap(buffer, outBuffer);
+    }
+    catch (SSLException e) {
+      return -1; //TODO: Handle the exception
+    }
+
+    outBuffer.flip();
+
+    switch (result.getStatus()) {
+      case OK:
+        if (result.getHandshakeStatus() == HandshakeStatus.NEED_TASK)
+            executeTask();
+        break;
+      default:
+        //TODO: Handle the exception
+    }
+
+    if (outBuffer.hasRemaining()) {
+      try {
+        channel.write(outBuffer);
+      }
+      catch (IOException e) {
+        //TODO: Handle the exception
+      }
+    }
+
+    if (outBuffer.hasRemaining()) {
+      isWriting = true;
+      oldListener = manager.registerWriterListener(channel, this);
+      try {
+        sem.acquire();
+      }
+      catch (InterruptedException e) {}
+      manager.registerWriterListener(channel, oldListener);
+    }
+
+    return result.bytesConsumed();
+  }
+  
   @Override
   public void write(SelectableChannel ch, EventLoop manager) {
     try {
@@ -132,6 +182,11 @@ class SSLChannel implements WriterListener {
         channel.write(outBuffer); 
       else
         handshake();
+      
+      if (!outBuffer.hasRemaining() && isWriting) {
+        isWriting = false;
+        sem.release();
+      }
     }
     catch (IOException e) {
       // TODO Auto-generated catch block
@@ -141,13 +196,13 @@ class SSLChannel implements WriterListener {
   
   private int moveRemaining(final ByteBuffer dst, int maxLength) {
     if (maxLength == -1) maxLength = dst.remaining();
-    int maxTransfer = Math.min(buffer.remaining(), maxLength);
+    int maxTransfer = Math.min(curBuffer.remaining(), maxLength);
     if (maxTransfer > 0) {
-      dst.put(buffer.array(), 0, maxTransfer);
-      buffer.position(maxTransfer);
-      buffer.compact();
-      buffer.flip();
-      if (buffer.hasRemaining())
+      dst.put(curBuffer.array(), 0, maxTransfer);
+      curBuffer.position(maxTransfer);
+      curBuffer.compact();
+      curBuffer.flip();
+      if (curBuffer.hasRemaining())
         checkBufRemaining = true;
       else
         checkBufRemaining = false;
@@ -184,7 +239,7 @@ class SSLChannel implements WriterListener {
     
     while (handshakeStatus == HandshakeStatus.NEED_UNWRAP) {
       inBuffer.flip();
-      final SSLEngineResult result = sslEngine.unwrap(inBuffer, buffer);
+      final SSLEngineResult result = sslEngine.unwrap(inBuffer, curBuffer);
       inBuffer.compact();
       
       final Status status = result.getStatus();
@@ -219,11 +274,11 @@ class SSLChannel implements WriterListener {
       }
       else if (status == Status.BUFFER_OVERFLOW) {
         int pbSize = sslEngine.getSession().getPacketBufferSize();
-        if (buffer.remaining() < pbSize) {
-          ByteBuffer newBuffer = ByteBuffer.allocate(buffer.capacity() * 2);
-          buffer.flip();
-          newBuffer.put(buffer);
-          buffer = newBuffer;
+        if (curBuffer.remaining() < pbSize) {
+          ByteBuffer newBuffer = ByteBuffer.allocate(curBuffer.capacity() * 2);
+          curBuffer.flip();
+          newBuffer.put(curBuffer);
+          curBuffer = newBuffer;
         }
       }
       else {

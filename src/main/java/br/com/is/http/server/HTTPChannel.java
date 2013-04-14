@@ -123,8 +123,8 @@ final class HTTPChannel {
     if (buffer == null)
       return -1;
     
-    if (sslChannel != null) {}
-//      return sslChannel.write(buffer);
+    if (sslChannel != null)
+      return sslChannel.write(buffer);
 
     return channel.write(buffer);    
   }
