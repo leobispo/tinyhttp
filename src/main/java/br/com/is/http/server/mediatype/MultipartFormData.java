@@ -47,6 +47,8 @@ public class MultipartFormData implements HTTPMediaType {
   public void process(final HTTPContext context, final HTTPRequest request,final HTTPResponse response,
     final String parameter, final Hashtable<String, String> requestParams,
     final Hashtable<String, Part> parts) throws HTTPRequestException {
+    
+    //TODO: This code Is wrong. I cannot handle the content media as string! Instead of, read an amount of buffer, check for the special bondary character and got to next
     final String boundaryAttribute[] = parameter.split("=");
     
     if (boundaryAttribute.length != 2 || !boundaryAttribute[0].trim().equalsIgnoreCase(BOUNDARY))

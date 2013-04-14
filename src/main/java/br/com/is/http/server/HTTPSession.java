@@ -131,6 +131,7 @@ public class HTTPSession {
    * Internal method used to set the last access time.
    * 
    * @param lastAccessTime Last access time.
+   * 
    */
   void setLastAccessTime(final long lastAccessTime) {
     this.lastAccessTime = lastAccessTime;

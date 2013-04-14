@@ -16,6 +16,7 @@
  */
 package br.com.is.http.server;
 
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -41,7 +42,7 @@ import br.com.is.nio.listener.AcceptListener;
  *
  */
 public final class HTTPServer implements Runnable, AcceptListener {
-  enum Type { HTTP, HTTPS }
+  public enum Type { HTTP, HTTPS }
   
   private SSLContext sslContext;
   
@@ -50,6 +51,8 @@ public final class HTTPServer implements Runnable, AcceptListener {
   private final ConcurrentHashMap<String, HTTPSession> sessions      = new ConcurrentHashMap<>();
   private final EventLoop                              loop          = new EventLoop();
   private final Type                                   type;
+  private final File                                   sslCertificate;
+  private final String                                 passphrase;
   private final InetSocketAddress                      addr;
   private final int                                    backlog;
   private final Hashtable<String, HTTPContext>         contexts      = new Hashtable<>();
@@ -61,15 +64,35 @@ public final class HTTPServer implements Runnable, AcceptListener {
    * 
    * @param addr Address to listen on.
    * @param backlog The socket backlog. If this value is less than or equal to zero, then a system default value is used.
-   * @param type HTTP connection type (HTTP or HTTPS).
    * 
    * @throws IOException
    * 
    */
-  public HTTPServer(final InetSocketAddress addr, int backlog, Type type) throws IOException {
+  public HTTPServer(final InetSocketAddress addr, final int backlog) throws IOException {
+    this.addr           = addr;
+    this.type           = Type.HTTP;
+    this.backlog        = backlog;
+    this.sslCertificate = null;
+    this.passphrase     = null;
+  }
+  
+  /**
+   * Constructor.
+   * 
+   * @param addr Address to listen on.
+   * @param backlog The socket backlog. If this value is less than or equal to zero, then a system default value is used.
+   * @param sslCertificate File containing the SSL Certificate.
+   * @param passphrase Certificate passphrase.
+   * 
+   * @throws IOException
+   * 
+   */
+  public HTTPServer(final InetSocketAddress addr, final int backlog, final File sslCertificate, final String passphrase) throws IOException {
     this.addr    = addr;
-    this.type    = type;
+    this.type    = Type.HTTPS;
     this.backlog = backlog;
+    this.sslCertificate = sslCertificate;
+    this.passphrase     = passphrase;
   }
   
   /**
@@ -126,12 +149,18 @@ public final class HTTPServer implements Runnable, AcceptListener {
    */
   public void stop(int delay) {
     for (;;) {
-      try {
+//      try { //TODO: Fix ME!!
         loop.stop();
-        wait(delay);
+        try {
+          serverChannel.close();
+        }
+        catch (IOException e) {
+          e.printStackTrace();
+        }
+//        wait(delay);
         break;
-      }
-      catch (InterruptedException e) {}
+//      }
+//      catch (InterruptedException e) {}
     }
     
     running = false;
@@ -201,10 +230,10 @@ public final class HTTPServer implements Runnable, AcceptListener {
    */
   private SSLContext createSSLContext(final Type type) throws Exception {
     if (sslContext == null && type == Type.HTTPS) {
-      char[] passphrase = "password".toCharArray();
+      char[] passphrase = this.passphrase.toCharArray();
 
       KeyStore ks = KeyStore.getInstance("JKS");
-      ks.load(new FileInputStream("testkeys"), passphrase);
+      ks.load(new FileInputStream(sslCertificate), passphrase);
 
       KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
       kmf.init(ks, passphrase);
@@ -217,6 +246,7 @@ public final class HTTPServer implements Runnable, AcceptListener {
       
       return sslContext;
     }
+    
     return sslContext;
   }
 }

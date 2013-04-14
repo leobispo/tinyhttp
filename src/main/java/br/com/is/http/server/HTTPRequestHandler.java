@@ -204,7 +204,7 @@ final class HTTPRequestHandler implements ReaderListener {
         final String method[] = line.split(" ");
         
         if (method.length != 3)
-          throw new BadRequestException("Invalid Request. Cannot parse the Request method");
+          throw new BadRequestException("Invalid Request. Cannot parse the Request method: " + line);
         
         if (method[0].equalsIgnoreCase(HTTPRequest.RequestMethod.POST.name()))
           this.method = HTTPRequest.RequestMethod.POST;
