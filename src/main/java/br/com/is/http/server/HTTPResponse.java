@@ -35,7 +35,7 @@ public interface HTTPResponse {
 
   public void sendRedirect(final String location) throws IllegalStateException;
   
-  public void setStatus(int sc);
+  public void setStatus(HTTPStatus sc);
   
   public OutputStream getOutputStream();
   

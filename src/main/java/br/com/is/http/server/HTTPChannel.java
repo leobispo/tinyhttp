@@ -21,9 +21,16 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLException;
 
 import br.com.is.nio.EventLoop;
 
+/**
+ * This class is responsible to handle all the IN/OUT HTTP/HTTPS communication.
+ * 
+ * @author Leonardo Bispo de Oliveira
+ *
+ */
 final class HTTPChannel {
   private final SocketChannel channel;
   private final SSLContext    sslContext;
@@ -32,6 +39,13 @@ final class HTTPChannel {
   
   private final SSLChannel    sslChannel;
   
+  /**
+   * Constructor.
+   * 
+   * @param channel Connection channel.
+   * @param sslContext The ssl context if this is an HTTPS channel.
+   * @param manager Event loop manager.
+   */
   HTTPChannel(final SocketChannel channel, final SSLContext sslContext, final EventLoop manager) {
     this.channel    = channel;
     this.sslContext = sslContext;
@@ -42,37 +56,161 @@ final class HTTPChannel {
       sslChannel = null;
   }
   
+  /**
+   * Returns the socket channel.
+   * 
+   * @return The socket channel.
+   * 
+   */
   SocketChannel getSocketChannel() {
     return channel;
   }
 
-  boolean handshake() {
-    if (sslChannel != null) {
-      try {
-        return sslChannel.handshake();
-      }
-      catch (IOException e) {
-        // TODO Auto-generated catch block
-        e.printStackTrace();
-      }
-    }
-    
+  /**
+   * Execute the SSL handshake. It it is an HTTP connection, it will just ignore it.
+   * 
+   * @return True if the handshake is done, otherwise false.
+   * 
+   * @throws IOException, SSLException
+   */
+  boolean handshake() throws IOException, SSLException {
+    if (sslChannel != null)
+      return sslChannel.handshake();
+
     return true;
   }
 
-  long read(final ByteBuffer buffer) throws IOException {
-    if (buffer == null)
+  /**
+   * Read N bytes from the channel and add it to the dst ByteBuffer.
+   * 
+   * @param dst Buffer that will receive the bytes from the channel.
+   * 
+   * @return Number of read buffers of -1 if it is end of the connection.
+   * 
+   * @throws IOException
+   * 
+   */
+  long read(final ByteBuffer dst) throws IOException {
+    if (dst == null)
       return 0;
     
     if (remainingData != null)
-      return moveRemaining(buffer, -1);
+      return moveRemaining(dst, -1);
     
     if (sslChannel != null)
-      return sslChannel.read(buffer);
+      return sslChannel.read(dst);
     
-    return channel.read(buffer);
+    return channel.read(dst);
   }
 
+  /**
+   * Read N bytes from the channel and add it to the dst ByteBuffer. If the read datas is bigger than
+   * maxLenght, keep it for the next read.
+   * 
+   * @param dst Buffer that will receive the bytes from the channel.
+   * @param maxLength Max number of bytes to be read.
+   * 
+   * @return Number of read buffers of -1 if it is end of the connection.
+   * 
+   * @throws IOException
+   * 
+   */
+  long read(final ByteBuffer dst, int maxLength) throws IOException {
+    if (dst == null)
+      return 0;
+    
+    if (remainingData != null)
+      return moveRemaining(dst, maxLength);
+    
+    int len = 0;
+    if (sslContext != null)
+      len = sslChannel.read(dst);
+    else
+      len = channel.read(dst);
+    
+    if (len > maxLength) {
+      remainingData = ByteBuffer.allocate(dst.limit());
+      try {
+        remainingData.put(dst.array(), maxLength - 1, dst.limit() - maxLength);
+      }
+      catch (Exception e) {
+        System.out.println("HERE");
+      }
+      dst.limit(maxLength + 1);
+
+      remainingData.position(maxLength);
+      remainingData.compact();
+      remainingData.flip();
+    }
+
+    return (len < maxLength) ? len : maxLength;
+  }
+  
+  /**
+   * Write N bytes to the channel.
+   * 
+   * @param src Buffer to be written.
+   * 
+   * @return Effective number of bytes written to the channel
+   * 
+   * @throws IOException
+   * 
+   */
+  long write(final ByteBuffer buffer) throws IOException {
+    if (buffer == null)
+      return -1;
+    
+    if (sslChannel != null)
+      return sslChannel.write(buffer);
+
+    return channel.write(buffer);    
+  }
+
+  /**
+   * Close this channel and unregister it from the event loop manager.
+   * 
+   * @throws IOException
+   * 
+   */
+  void close() throws IOException {
+    if (sslChannel != null)
+      sslChannel.shutdown();
+
+    manager.unregisterWriterListener(channel);
+    manager.unregisterReaderListener(channel);
+    channel.close();
+  }
+  
+  /**
+   * Put a remaining read data to the beginning of this channel.
+   * 
+   * @param buffer Data to be added to this channel.
+   * 
+   */
+  void setRemaining(final ByteBuffer buffer) {
+    if (buffer.hasRemaining())
+      remainingData = buffer;
+  }
+  
+  /**
+   * Return if this is an HTTPS channel.
+   * 
+   * @return True if it is HTTPS, otherwise false.
+   * 
+   */
+  boolean isSSL() {
+    return sslContext != null;
+  }
+  
+  /**
+   * Move remaining bytes in this class. This can be happen when the read buffer is not big enough.
+   * 
+   * @param dst Byte array to receive the remaining data.
+   * @param maxLength Max number of bytes to be read.
+   * 
+   * @return Number of read bytes.
+   * 
+   */
   private long moveRemaining(final ByteBuffer buffer, int maxLength) {
     if (maxLength == -1) maxLength = buffer.remaining();
     int maxTransfer = Math.min(remainingData.remaining(), maxLength);
@@ -86,63 +224,5 @@ final class HTTPChannel {
     }
     
     return maxTransfer;
-  }
-
-  long read(final ByteBuffer buffer, int maxLength) throws IOException {
-    if (buffer == null)
-      return 0;
-    
-    if (remainingData != null)
-      return moveRemaining(buffer, maxLength);
-    
-    int len = 0;
-    if (sslContext != null)
-      len = sslChannel.read(buffer);
-    else
-      len = channel.read(buffer);
-    
-    if (len > maxLength) {
-      remainingData = ByteBuffer.allocate(buffer.limit());
-      try {
-        remainingData.put(buffer.array(), maxLength - 1, buffer.limit() - maxLength);
-      }
-      catch (Exception e) {
-        System.out.println("HERE");
-      }
-      buffer.limit(maxLength + 1);
-
-      remainingData.position(maxLength);
-      remainingData.compact();
-      remainingData.flip();
-    }
-
-    return (len < maxLength) ? len : maxLength;
-  }
-  
-  long write(final ByteBuffer buffer) throws IOException {
-    if (buffer == null)
-      return -1;
-    
-    if (sslChannel != null)
-      return sslChannel.write(buffer);
-
-    return channel.write(buffer);    
-  }
-
-  void close() throws IOException {
-//    if (sslChannel != null && sslChannel.isFinishedHandshake())
-//      sslChannel.shutdown();
-    manager.unregisterWriterListener(channel);
-    manager.unregisterReaderListener(channel);
-    channel.close();
-  }
-  
-  void setRemaining(final ByteBuffer buffer) {
-    if (buffer.hasRemaining())
-      remainingData = buffer;
-  }
-  
-  boolean isSSL() {
-    return sslContext != null;
   }
 }

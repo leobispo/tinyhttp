@@ -138,7 +138,7 @@ public final class EventLoop implements Runnable {
       }
       else {
         if ((key.interestOps() & SelectionKey.OP_READ) != 0)
-          oldListener = ((ReaderListener)((Object[]) key.attachment())[SelectionKey.OP_READ]);
+          oldListener = ((ReaderListener)((Object[]) key.attachment())[READ]);
         
         ((Object[]) key.attachment())[READ] = listener;
         key.interestOps(key.interestOps() | SelectionKey.OP_READ);

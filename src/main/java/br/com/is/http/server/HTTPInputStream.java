@@ -176,7 +176,7 @@ final class HTTPInputStream extends InputStream implements ReaderListener {
   }
 
   /**
-   * This method will be called for each time that an OP_READ event occurr.
+   * This method will be called on each time an OP_READ event occur.
    * 
    * @param channel Channel that contains the data to be read.
    * @param manager The event loop manager.

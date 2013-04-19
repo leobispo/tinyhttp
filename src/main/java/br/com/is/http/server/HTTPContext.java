@@ -18,27 +18,27 @@ package br.com.is.http.server;
 
 public abstract class HTTPContext {
   public void doDelete(final HTTPRequest req, final HTTPResponse resp) {
-    resp.setStatus(405);
+    resp.setStatus(HTTPStatus.METHOD_NOT_ALLOWED);
   }
   
   public void doGet(final HTTPRequest req, final HTTPResponse resp) { 
-    resp.setStatus(405);
+    resp.setStatus(HTTPStatus.METHOD_NOT_ALLOWED);
   }
 
   public void doOptions(final HTTPRequest req, final HTTPResponse resp) {
-    resp.setStatus(405);
+    resp.setStatus(HTTPStatus.METHOD_NOT_ALLOWED);
   }
 
   public void doPost(final HTTPRequest req, final HTTPResponse resp) {
-    resp.setStatus(405);
+    resp.setStatus(HTTPStatus.METHOD_NOT_ALLOWED);
   }
 
   public void doPut(final HTTPRequest req, final HTTPResponse resp) {
-    resp.setStatus(405);
+    resp.setStatus(HTTPStatus.METHOD_NOT_ALLOWED);
   }
   
   public void doTrace(final HTTPRequest req, final HTTPResponse resp) {
-    resp.setStatus(405);
+    resp.setStatus(HTTPStatus.METHOD_NOT_ALLOWED);
   }
   
   //TODO: Implement the annotation to inject this information!

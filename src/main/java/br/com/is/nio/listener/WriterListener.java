@@ -20,6 +20,22 @@ import java.nio.channels.SelectableChannel;
 
 import br.com.is.nio.EventLoop;
 
+/**
+ * This Interface will be used as a callback for the NIO write events.
+ * If you want to register an interest for OP_WRITE events, register an
+ * implemented class inside the EventLoop. Every time that an OP_WRITE event
+ * occur, the write method will be Called.
+ * 
+ * @author Leonardo Bispo de Oliveira.
+ *
+ */
 public interface WriterListener {
+  /**
+   * This method will be called on each time an OP_WRITE event occur.
+   * 
+   * @param channel Channel that contains the data to be write.
+   * @param manager The event loop manager.
+   * 
+   */
   public void write(final SelectableChannel channel, final EventLoop manager);
 }

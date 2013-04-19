@@ -25,6 +25,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.net.ssl.SSLException;
+
 import br.com.is.http.server.exception.BadRequestException;
 import br.com.is.nio.EventLoop;
 import br.com.is.nio.listener.ReaderListener;
@@ -41,11 +43,6 @@ final class HTTPRequestHandler implements ReaderListener {
   
   private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
   
-  private static final int BAD_REQUEST_ERROR              = 400;
-  private static final int NOT_FOUND_ERROR                = 404;
-  private static final int METHOD_NOT_ALLOWED_ERROR       = 405;
-  private static final int REQUEST_ENTITY_TOO_LARGE_ERROR = 413;
-  private static final int INTERNAL_SERVER_ERROR          = 500;
   private static final int BUFFER_SIZE                    = 4096;
   
   private static final String COOKIE = "cookie";
@@ -92,12 +89,32 @@ final class HTTPRequestHandler implements ReaderListener {
       os = new HTTPOutputStream(channel, manager);
   }
 
+  /**
+   * This method will be called for each time that an OP_READ event occur.
+   * 
+   * @param channel Channel that contains the data to be read.
+   * @param manager The event loop manager.
+   * 
+   */
   @Override
   public void read(final SelectableChannel ch, final EventLoop manager) {
-    if (channel.isSSL() && !channel.handshake())
+    try {
+      if (channel.isSSL() && !channel.handshake())
+        return;
+      else if (os == null)
+        os = new HTTPOutputStream(channel, manager);
+    }
+    catch (SSLException ssle) {
+      try {
+        channel.close();
+      }
+      catch (IOException e) {}
       return;
-    else if (os == null)
-      os = new HTTPOutputStream(channel, manager);
+    }
+    catch (IOException e) {
+      sendError(HTTPStatus.INTERNAL_SERVER_ERROR, e);
+      return;
+    }
 
     long length = 0;
     do {
@@ -105,7 +122,7 @@ final class HTTPRequestHandler implements ReaderListener {
         length = channel.read(buffer);
       }
       catch (IOException e) {
-        sendError(INTERNAL_SERVER_ERROR, e);
+        sendError(HTTPStatus.INTERNAL_SERVER_ERROR, e);
         return;
       }
 
@@ -122,7 +139,7 @@ final class HTTPRequestHandler implements ReaderListener {
               if (buffer.remaining() < (int) (buffer.capacity()) * 0.10) {
                 if (buffer.capacity() == (BUFFER_SIZE * 2)) {
                   sendError("Invalid request. Not possible to read the HTTP Header. Header is bigger than "  + (BUFFER_SIZE * 2),
-                      REQUEST_ENTITY_TOO_LARGE_ERROR);
+                      HTTPStatus.REQUEST_ENTITY_TOO_LARGE);
                   return;
                 }
 
@@ -134,11 +151,11 @@ final class HTTPRequestHandler implements ReaderListener {
             }
           }
           catch (BadRequestException be) {
-            sendError(BAD_REQUEST_ERROR, be);
+            sendError(HTTPStatus.BAD_REQUEST, be);
             return;
           }
           catch (IOException ie) {
-            sendError(INTERNAL_SERVER_ERROR, ie);
+            sendError(HTTPStatus.INTERNAL_SERVER_ERROR, ie);
             return;
           }
         }
@@ -146,7 +163,7 @@ final class HTTPRequestHandler implements ReaderListener {
         if (type == HeaderType.BODY) {
           final HTTPContext ctx = contexts.get(uri);
           if (ctx == null) {
-            sendError("Cannot find the context for: " + uri, NOT_FOUND_ERROR);
+            sendError("Cannot find the context for: " + uri, HTTPStatus.NOT_FOUND);
             return;
           }
 
@@ -169,7 +186,7 @@ final class HTTPRequestHandler implements ReaderListener {
           if (LOGGER.isLoggable(Level.WARNING))
             LOGGER.log(Level.WARNING, "Problems to close the channel", e);
         }
-      } 
+      }
     } while (length > 0);
   }
 
@@ -221,7 +238,7 @@ final class HTTPRequestHandler implements ReaderListener {
         else if (method[0].equalsIgnoreCase(HTTPRequest.RequestMethod.OPTIONS.name()))
           this.method = HTTPRequest.RequestMethod.OPTIONS;
         else
-          sendError("Request method not recognized", METHOD_NOT_ALLOWED_ERROR);
+          sendError("Request method not recognized", HTTPStatus.METHOD_NOT_ALLOWED);
 
         uri = decodeUri(method[1]);
         header.put("HTTP-Version", method[2].trim());
@@ -247,7 +264,7 @@ final class HTTPRequestHandler implements ReaderListener {
    * @param message
    * @param error
    */
-  private void sendError(final String message, int error) {
+  private void sendError(final String message, HTTPStatus error) {
     if (LOGGER.isLoggable(Level.WARNING))
       LOGGER.log(Level.WARNING, message);
     
@@ -267,7 +284,7 @@ final class HTTPRequestHandler implements ReaderListener {
    * @param error
    * @param e
    */
-  private void sendError(int error, Exception e) {
+  private void sendError(HTTPStatus error, Exception e) {
     if (LOGGER.isLoggable(Level.WARNING))
       LOGGER.log(Level.WARNING, e.getMessage(), e);
     

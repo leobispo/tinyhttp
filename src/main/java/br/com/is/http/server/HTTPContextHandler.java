@@ -49,11 +49,6 @@ import br.com.is.nio.listener.ReaderListener;
 final class HTTPContextHandler implements Runnable {
   private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
-  private static final int TEMPORARY_REDIRECT               = 307;
-  private static final int LENGTH_REQUIRED_ERROR            = 411;
-  private static final int REQUEST_ENTITY_TOO_LARGE_ERROR   = 413;
-  private static final int UNSUPORTED_MEDIA_TYPE_ERROR      = 415;
-  
   private static final String M_DIGEST_ALGORITHM            = "MD5";
   
   private static final String SESSION_COOKIE_NAME           = "ISSESSIONID";
@@ -205,25 +200,25 @@ final class HTTPContextHandler implements Runnable {
       String length = requestHeader.get(CONTENT_LENGTH);
 
       if (length == null) {
-        os.sendError(LENGTH_REQUIRED_ERROR);
+        os.sendError(HTTPStatus.LENGTH_REQUIRED);
         return;
       }
 
       contentLength = Long.parseLong(length);
       if (contentLength > context.getMaxContentLenght()) {
-        os.sendError(REQUEST_ENTITY_TOO_LARGE_ERROR);
+        os.sendError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE);
         return;
       }
     }
     catch (NumberFormatException e) {
-      os.sendError(LENGTH_REQUIRED_ERROR);
+      os.sendError(HTTPStatus.LENGTH_REQUIRED);
       return;
     }
 
     String type = requestHeader.get(CONTENT_TYPE);
     
     if (type == null) {
-      os.sendError(UNSUPORTED_MEDIA_TYPE_ERROR);
+      os.sendError(HTTPStatus.UNSUPORTED_MEDIA_TYPE);
       return;
     }
 
@@ -248,7 +243,7 @@ final class HTTPContextHandler implements Runnable {
       }
     }
     else
-      os.sendError(UNSUPORTED_MEDIA_TYPE_ERROR);
+      os.sendError(HTTPStatus.UNSUPORTED_MEDIA_TYPE);
   }
   
   /**
@@ -447,7 +442,7 @@ final class HTTPContextHandler implements Runnable {
       if (os.isHeaderCreated())
         throw new IllegalStateException("The header was already written to the channel");
       
-      responseStatus.set(TEMPORARY_REDIRECT);
+      responseStatus.set(HTTPStatus.TEMPORARY_REDIRECT.getValue());
       responseHeader.clear();
       responseHeader.put("Location", location);
       
@@ -474,8 +469,8 @@ final class HTTPContextHandler implements Runnable {
     }
 
     @Override
-    public void setStatus(int sc) {
-      responseStatus.set(sc);
+    public void setStatus(HTTPStatus sc) {
+      responseStatus.set(sc.getValue());
     }
 
     @Override
