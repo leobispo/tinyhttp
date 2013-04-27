@@ -16,15 +16,15 @@
  */
 package br.com.is.http.server.mediatype;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.util.Enumeration;
 import java.util.Hashtable;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.StringTokenizer;
 
 import br.com.is.http.server.HTTPContext;
@@ -34,8 +34,14 @@ import br.com.is.http.server.Part;
 import br.com.is.http.server.exception.BadRequestException;
 import br.com.is.http.server.exception.HTTPRequestException;
 import br.com.is.http.server.exception.InternalServerErrorException;
+import br.com.is.http.server.exception.RequestEntityTooLargeException;
 
 public class MultipartFormData implements HTTPMediaType {
+  private enum Type { BEGIN, FORM, FILE };
+  private enum BoundaryCheck { NOT_BOUNDARY, NOT_SURE, BOUNDARY };
+  private static int BUFFER_SIZE                            = 8192; // Must be power of two!
+
+  private static final int    MASK                          = BUFFER_SIZE - 1;
   private static final String CONTENT_TYPE                  = "content-type";
   private static final String CONTENT_DISPOSITION           = "content-disposition";
   private static final String CONTENT_DISPOSITION_NAME      = "name";
@@ -43,111 +49,273 @@ public class MultipartFormData implements HTTPMediaType {
   
   private static final String BOUNDARY                      = "boundary";
   
+  private int readPtr          = 0;
+  private int available        = BUFFER_SIZE;
+  private final byte cbuffer[] = new byte[BUFFER_SIZE];
+  
   @Override
-  public void process(final HTTPContext context, final HTTPRequest request,final HTTPResponse response,
+  public void process(final HTTPContext context, final HTTPRequest request, final HTTPResponse response,
     final String parameter, final Hashtable<String, String> requestParams,
     final Hashtable<String, Part> parts) throws HTTPRequestException {
     
-    //TODO: This code Is wrong. I cannot handle the content media as string! Instead of, read an amount of buffer, check for the special bondary character and got to next
     final String boundaryAttribute[] = parameter.split("=");
     
     if (boundaryAttribute.length != 2 || !boundaryAttribute[0].trim().equalsIgnoreCase(BOUNDARY))
       throw new BadRequestException("Invalid media type parameter: " + parameter);
     
-    final String boundary    = "--" + boundaryAttribute[1].trim();
-    final String boundaryEnd = boundary + "--";
+    final String boundary       = "--" + boundaryAttribute[1].trim();
+    final String boundaryMiddle = "\r\n" + boundary;
+    final InputStream is  = request.getInputStream();
     
-    final BufferedReader reader = new BufferedReader(new InputStreamReader(request.getInputStream()));
-
-    String line;
+    Type type   = Type.BEGIN;
+    boolean end = false;
+    
+    String name = null;
+    PartImpl currPart = null;
+    boolean dumpEnded = false;
+    int currPtr = 0;
     try {
-      do {
-        final Hashtable<String, String> header = new Hashtable<>();
-        boolean body        = false;
-        Part    part        = null;
-        String  paramsName  = null;
-        String  paramsValue = null;
-        String  headerField = "";
-        
-        FileOutputStream os = null;
-        while ((line = reader.readLine()) != null && !line.startsWith(boundary)) {
-          if (line.isEmpty()) {
-            if (part != null) {
-              parts.put(part.getName(), part);
-              part = null;
-              
-              if (os != null)
-                os.close();
+      while (!end || (available < BUFFER_SIZE)) {
+        if (end && (available < BUFFER_SIZE && currPtr == readPtr))
+          throw new BadRequestException("Malformed Request Body");
+
+        currPtr = readPtr;
+        if (available == 0)
+          throw new RequestEntityTooLargeException("Cannot keep more than " + BUFFER_SIZE + " in buffer");
+        try {
+          int count = 0;
+          while (!end && available > 0 && count++ < 2) {
+            int writePtr = ((BUFFER_SIZE - available) + readPtr) & MASK;
+            int read     = is.read(cbuffer, writePtr, (BUFFER_SIZE - writePtr) >= available ? available : (BUFFER_SIZE - writePtr));
+            if (read != -1)
+              available -= read;
+            else
+              end = true;
+          }
+        }
+        catch (IOException e) {
+          throw new InternalServerErrorException("Problems to read data from the HTTP Channel", e);
+        }
+
+        if (type == Type.BEGIN) {
+          final Hashtable<String, String> header = parseBoundary(boundary);
+          if (header == null && end)
+            throw new BadRequestException("Problems to parse the Multipart-Form");
+          else if (header != null) {
+            if (!header.isEmpty()) {
+              String cDisposition = header.get(CONTENT_DISPOSITION);
+              if (cDisposition == null)
+                throw new BadRequestException("Wrong form-data. No valid content disposition");
+
+              final Hashtable<String, String> disposition = parseDisposition(cDisposition);
+
+              name = disposition.get(CONTENT_DISPOSITION_NAME);
+              if (name == null)
+                throw new BadRequestException("Wrong form-data. No valid content disposition");
+
+              name = name.replaceAll("\"", "");
+              if (header.containsKey(CONTENT_TYPE)) {
+                String fileName = disposition.get(CONTENT_DISPOSITION_FILE_NAME);
+                if (fileName != null) {
+                  fileName = fileName.replaceAll("\"", "");
+                  if (!fileName.isEmpty()) {
+                    try {
+                      type = Type.FILE;
+                      currPart = new PartImpl(name, fileName, header, context.getTempDirectory());
+                    }
+                    catch (IOException ie) {
+                      throw new InternalServerErrorException("Problem to create the temporary file", ie);
+                    }
+                  }
+                }
+              }
+              else
+                type = Type.FORM;
             }
+            else //This means that I found the end of the boundary. just stop the processing
+              end = true;
+          }
+        }
+        else if (type == Type.FORM)
+          parseForm(name, requestParams);
+        else 
+          dumpEnded = dumpTempData(currPart, boundaryMiddle);
+
+        if (dumpEnded || (type != Type.FILE && isBoundary(readPtr, boundaryMiddle) == BoundaryCheck.BOUNDARY)) {
+          dumpEnded = false;
+          discardBuffer(2);
+          type = Type.BEGIN;
+          if (currPart != null) {
+            try {
+              currPart.os.close();
+              parts.put(currPart.name, currPart);
+              currPart = null;
+            }
+            catch (IOException e) {
+              throw new InternalServerErrorException("Problem to close the temporary file", e);
+            }
+          }
+          name = null;
+        }
+      }
+
+      context.doPost(request, response);
+    }
+    finally {
+      Iterator<Map.Entry<String, Part>> it = parts.entrySet().iterator();
+
+      while (it.hasNext()) {
+        Map.Entry<String, Part> entry = it.next();
+
+        if (entry.getKey() != null)
+          ((PartImpl) entry.getValue()).deleteTempFile();
+        
+        if (currPart != null)
+          currPart.deleteTempFile();
+      }
+    }
+  }
+  
+  private void parseForm(final String name, final Hashtable<String, String> requestParams) {
+    StringBuilder builder = new StringBuilder();
+    
+    int bytesRead = 0;
+    int currPtr   = readPtr;
+    int availableRead = (BUFFER_SIZE - available);
+    while (availableRead-- >= 2) {
+      if (cbuffer[currPtr & MASK] == '\r' && cbuffer[(currPtr + 1) & MASK] == '\n') {
+        requestParams.put(name, builder.toString());
+        discardBuffer(bytesRead);
+        return;
+      }
+      else {
+        ++bytesRead;
+        builder.append((char) cbuffer[currPtr++ & MASK]);
+      }
+    }
+  }
+  
+  private Hashtable<String, String> parseBoundary(final String boundary) {
+    if (isBoundary(readPtr, boundary) != BoundaryCheck.BOUNDARY || (BUFFER_SIZE - (available + boundary.length()) < 2))
+      return null; 
+    
+    int bytesRead = 0;
+    final Hashtable<String, String> header = new Hashtable<>();
+    int currPtr = (readPtr + boundary.length());
+    if (cbuffer[currPtr & MASK] == '-' && cbuffer[(currPtr + 1) & MASK] == '-') { // End of the boundaries
+      discardBuffer(boundary.length() + 4);
+      return header;
+    }
+
+    currPtr   += 2;
+    bytesRead += 2 + boundary.length();
+    int availableRead = (BUFFER_SIZE - (available + boundary.length()));
+    boolean isNewLine = false;
+    
+    StringBuilder builder = new StringBuilder();
+    String headerField = "";
+    while (availableRead-- >= 2) {
+      if (cbuffer[currPtr & MASK] == '\r' && cbuffer[(currPtr + 1) & MASK] == '\n') {
+        if (isNewLine) {
+          if (!headerField.isEmpty()) {
+            int idx = headerField.indexOf(':');
+            if (idx != -1)
+              header.put(headerField.substring(0, idx).trim().toLowerCase(), headerField.substring(idx + 1).trim());
+          }
+            
+          discardBuffer(bytesRead + 2);
+          return header;
+        }
+
+        String line = builder.toString();
+        if (!line.isEmpty()) {         
+          if (line.indexOf(' ') != 0 && line.indexOf('\t') != 0) {
             if (!headerField.isEmpty()) {
               int idx = headerField.indexOf(':');
               if (idx != -1)
                 header.put(headerField.substring(0, idx).trim().toLowerCase(), headerField.substring(idx + 1).trim());
             }
-            
-            String cDisposition = header.get(CONTENT_DISPOSITION);
-            if (cDisposition == null)
-              throw new BadRequestException("Wrong form-data. No valid content disposition");
-            
-            final Hashtable<String, String> disposition = parseDisposition(cDisposition);
-            
-            final String name = disposition.get(CONTENT_DISPOSITION_NAME);
-            if (name == null)
-              throw new BadRequestException("Wrong form-data. No valid content disposition");
-            
-            if (header.containsKey(CONTENT_TYPE)) {
-              String fileName = disposition.get(CONTENT_DISPOSITION_FILE_NAME);
-              if (fileName != null && !fileName.isEmpty()) {
-                fileName = fileName.replaceAll("\"", "");
-                final File tempFile = File.createTempFile(fileName, ".tmp", new File(context.getTempDirectory()));
-                os   = new FileOutputStream(tempFile);
-                part = new PartImpl(name, fileName, tempFile, header);
-              }
-            }
-            else
-              paramsName = name;
+            headerField = line;
+          }
+          else
+            headerField += line;
 
-            body = true;
-          }
-          else if (!body) {
-            if (line.indexOf(' ') != 0 && line.indexOf('\t') != 0) {
-              if (!headerField.isEmpty()) {
-                int idx = headerField.indexOf(':');
-                if (idx != -1)
-                  header.put(headerField.substring(0, idx).trim().toLowerCase(), headerField.substring(idx + 1).trim());
-              }
-              headerField = line;
-            }
-            else
-              headerField += line;
-          }
-          else {
-            if (part == null)
-              paramsValue = paramsValue == null ? line : paramsValue + line;
-            else if (os != null)
-              os.write(line.getBytes());
-          }
+          builder = new StringBuilder();
         }
-        
-        if (part == null) {
-          if (paramsName != null && paramsValue != null)
-            requestParams.put(paramsName, paramsValue);
-        }
-        else if (part != null) {
-          parts.put(part.getName(), part);
-          part = null;
-          
-          if (os != null)
-            os.close();
+        currPtr   += 2;
+        bytesRead += 2;
+        isNewLine = true;
+      }
+      else {
+        ++bytesRead;
+        builder.append((char) cbuffer[currPtr++ & MASK]);
+        isNewLine = false;
+      }
+    }
+
+    return null;
+  }
+  
+  private BoundaryCheck isBoundary(int ptr, final String boundary) {
+    byte b[] = boundary.getBytes();
+    if (b.length > (BUFFER_SIZE - available))
+      return BoundaryCheck.NOT_SURE;
+    
+    for (int i = 0; i < b.length; ++i) {
+      if (b[i] != cbuffer[(ptr + i) & MASK])
+        return BoundaryCheck.NOT_BOUNDARY;
+    }
+    
+    return BoundaryCheck.BOUNDARY;
+  }
+
+  private boolean dumpTempData(final PartImpl part, final String boundary) throws HTTPRequestException {
+    if (part == null)
+      throw new InternalServerErrorException("Problems to create a temporary file to store the incomming files");
+
+    int bytesRead = 0;
+    int currPtr   = readPtr;
+    int availableRead = (BUFFER_SIZE - available);
+    while (availableRead-- >= 2) {
+      if (cbuffer[currPtr & MASK] == '\r' && cbuffer[(currPtr + 1) & MASK] == '\n') {
+        BoundaryCheck check = isBoundary(currPtr, boundary);
+        if (check == BoundaryCheck.BOUNDARY) {
+          flushBuffer(bytesRead, part);
+          return true;
         }
 
-      } while (line != null && !line.equals(boundaryEnd));
-      
-      context.doPost(request, response);
+        if (check == BoundaryCheck.NOT_SURE)
+          break;
+        currPtr   += 2;
+        bytesRead += 2;
+      }
+      else {
+        ++bytesRead;
+        ++currPtr;
+      }
     }
-    catch (IOException e) {
-      throw new InternalServerErrorException("Problems to read data from the HTTP Channel", e);
+    
+    flushBuffer(bytesRead, part);
+    return false;
+  }
+  
+  private void flushBuffer(int bytesRead, final PartImpl part) throws HTTPRequestException {
+    while (bytesRead > 0) {
+      int write = ((BUFFER_SIZE - (readPtr & MASK)) < bytesRead) ? (BUFFER_SIZE - (readPtr & MASK)) : bytesRead;
+      try {
+        part.os.write(cbuffer, readPtr & MASK, write);
+      }
+      catch (IOException e) {
+        throw new InternalServerErrorException("Problems to write to the temporary file");
+      }
+      bytesRead -= write;
+      discardBuffer(write);
     }
+  }
+  
+  private void discardBuffer(int size) {
+    readPtr    = (readPtr + size);
+    available += size;
   }
   
   private Hashtable<String, String> parseDisposition(String disposition) {
@@ -162,7 +330,7 @@ public class MultipartFormData implements HTTPMediaType {
     
     return ret;
   }
-  
+
   /**
    * This class represents a part or form item that was received within a multipart/form-data POST request.
    * 
@@ -176,6 +344,9 @@ public class MultipartFormData implements HTTPMediaType {
     private final String                    fileName;
     
     private FileInputStream                 is = null;
+    private final FileOutputStream          os;
+    
+    private boolean moved = false;
     
     /**
      * Constructor.
@@ -186,10 +357,11 @@ public class MultipartFormData implements HTTPMediaType {
      * @param header The part header.
      * 
      */
-    public PartImpl(final String name, final String fileName, final File tempFile, final Hashtable<String, String> header) {
+    public PartImpl(final String name, final String fileName, final Hashtable<String, String> header, final String tempDirectory) throws IOException {
       this.name     = name;
       this.fileName = fileName;
-      this.tempFile = tempFile;
+      this.tempFile = File.createTempFile(fileName, ".tmp", new File(tempDirectory)); 
+      this.os       = new FileOutputStream(tempFile);
       this.header   = header;
       
       tempFile.deleteOnExit();
@@ -301,7 +473,13 @@ public class MultipartFormData implements HTTPMediaType {
      */
     @Override
     public void write(String fileName) throws IOException {
+      moved = true;
       tempFile.renameTo(new File(fileName));
+    }
+    
+    private void deleteTempFile() {
+      if (!moved)
+        tempFile.delete();
     }
   }
 }

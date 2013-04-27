@@ -1,4 +1,4 @@
-package br.com.is.http.server.test;
+package br.com.is.http.server;
 
 import static org.junit.Assert.assertEquals;
 

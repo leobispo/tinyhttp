@@ -81,11 +81,11 @@ public class ApplicationXwwwFormURLEncode implements HTTPMediaType {
       switch (ch) {
       case '+':
         sb.append(' ');
-        break;
+      break;
       case '%':
         sb.append((char) Integer.parseInt(src.substring(i + 1, i + 3), 16));
         i += 2;
-        break;
+      break;
       default:
         sb.append(ch);
       }

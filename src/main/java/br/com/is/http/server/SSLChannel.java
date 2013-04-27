@@ -59,6 +59,7 @@ class SSLChannel implements WriterListener {
   private final Semaphore     sem                = new Semaphore(0);
 
   private boolean             shutdown           = false;
+
   /**
    * Constructor.
    * 
@@ -138,40 +139,23 @@ class SSLChannel implements WriterListener {
 
     if (channel.read(inBuffer) == -1)
         return -1;
-
-    SSLEngineResult result;
-    do {
-      inBuffer.flip();
-      result = sslEngine.unwrap(inBuffer, curBuffer); 
-      inBuffer.compact();
-      
-      final Status status = result.getStatus();
-      if (status == Status.OK && result.getHandshakeStatus() == HandshakeStatus.NEED_TASK)
-          executeTask();
-      else if (status == Status.BUFFER_UNDERFLOW) {
-        int pbSize = sslEngine.getSession().getPacketBufferSize();
-        if (pbSize > inBuffer.capacity()) {
-          ByteBuffer newBuffer = ByteBuffer.allocate(pbSize);
-          inBuffer.flip();
-          newBuffer.put(inBuffer);
-          inBuffer = newBuffer;
-        }
-      }
-      else if (status == Status.BUFFER_OVERFLOW) {
-        int pbSize = sslEngine.getSession().getPacketBufferSize();
-        if (curBuffer.remaining() < pbSize) {
-          ByteBuffer newBuffer = ByteBuffer.allocate(curBuffer.capacity() * 2);
-          curBuffer.flip();
-          newBuffer.put(curBuffer);
-          curBuffer = newBuffer;
-        }
-      }
-    } while ((inBuffer.position() != 0) && result.getStatus() != Status.BUFFER_UNDERFLOW);
     
-    if (result.getStatus() != Status.BUFFER_UNDERFLOW)
+    if (sslEngine.isInboundDone())
+      return -1;
+    
+    inBuffer.flip();
+    SSLEngineResult result = sslEngine.unwrap(inBuffer, curBuffer); 
+    inBuffer.compact();
+    
+    final Status status = result.getStatus();
+    if (status == Status.OK) {
       curBuffer.flip();
-
-    return moveRemaining(dst, -1);
+      return moveRemaining(dst, -1);
+    }
+    else if (status == Status.BUFFER_OVERFLOW)
+      throw new IOException("Buffer is overflow. It should never happens");
+    
+    return 0;
   }
 
   /**
@@ -304,8 +288,10 @@ class SSLChannel implements WriterListener {
       curBuffer.flip();
       if (curBuffer.hasRemaining())
         checkBufRemaining = true;
-      else
+      else {
+        curBuffer.clear();
         checkBufRemaining = false;
+      }
     }
     
     return maxTransfer;
@@ -371,26 +357,8 @@ class SSLChannel implements WriterListener {
             throw new IOException("Handshaking not working");
         }
       }
-      else if (status == Status.BUFFER_UNDERFLOW) {
-        int pbSize = sslEngine.getSession().getPacketBufferSize();
-        if (pbSize > inBuffer.capacity()) {
-          ByteBuffer newBuffer = ByteBuffer.allocate(pbSize);
-          inBuffer.flip();
-          newBuffer.put(inBuffer);
-          inBuffer = newBuffer;
-        }
-
+      else if (status == Status.BUFFER_UNDERFLOW)
         return false;
-      }
-      else if (status == Status.BUFFER_OVERFLOW) {
-        int pbSize = sslEngine.getSession().getPacketBufferSize();
-        if (curBuffer.remaining() < pbSize) {
-          ByteBuffer newBuffer = ByteBuffer.allocate(curBuffer.capacity() * 2);
-          curBuffer.flip();
-          newBuffer.put(curBuffer);
-          curBuffer = newBuffer;
-        }
-      }
       else
         throw new IOException("Problems to unwrap an ssl message: " + result.getStatus().toString());
     }

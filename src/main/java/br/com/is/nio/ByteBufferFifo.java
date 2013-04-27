@@ -33,7 +33,7 @@ public final class ByteBufferFifo {
   private static final int BUFFER_SIZE = 4096;
   
   private final AtomicReference<ByteBuffer> currentBuffer = new AtomicReference<>();
-  private final BlockingDeque<ByteBuffer> readBuffers     = new LinkedBlockingDeque<>();;
+  private final BlockingDeque<ByteBuffer> readBuffers     = new LinkedBlockingDeque<>();
   
   private AtomicBoolean ignoreData = new AtomicBoolean(false);
   

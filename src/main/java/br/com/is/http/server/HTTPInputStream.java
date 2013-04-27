@@ -41,6 +41,7 @@ final class HTTPInputStream extends InputStream implements ReaderListener {
   protected AtomicBoolean      isEof  = new AtomicBoolean(false);
   private ByteBuffer           buffer = null;
 
+  private final EventLoop manager;
   /**
    * Constructor.
    * 
@@ -63,7 +64,8 @@ final class HTTPInputStream extends InputStream implements ReaderListener {
   public HTTPInputStream(final HTTPChannel channel, final EventLoop manager, long contentLength) {
     this.channel       = channel;
     this.availableRead = contentLength;
-
+    this.manager       = manager;
+    
     read(channel.getSocketChannel(), manager);    
     manager.registerReaderListener(channel.getSocketChannel(), this);  
   }
@@ -170,6 +172,9 @@ final class HTTPInputStream extends InputStream implements ReaderListener {
       }
 
       buffer = fifo.getReadBuffer();
+      
+      if (availableRead > 0)
+        read(channel.getSocketChannel(), manager);
     } while (buffer != null);
 
     return (readLen == 0) ? -1 : readLen;
@@ -183,7 +188,7 @@ final class HTTPInputStream extends InputStream implements ReaderListener {
    * 
    */
   @Override
-  public void read(SelectableChannel ch, EventLoop manager) {
+  public synchronized void read(SelectableChannel ch, EventLoop manager) {
     long length = -1;
 
     try {

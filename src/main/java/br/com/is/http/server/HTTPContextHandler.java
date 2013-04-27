@@ -232,6 +232,7 @@ final class HTTPContextHandler implements Runnable {
     HTTPMediaType mediaType = mediaTypes.get(type);
     if (mediaType != null) {
       try {
+        mediaType = mediaType.getClass().newInstance();
         mediaType.process(context, new HTTPRequestImpl(new HTTPInputStream(channel, manager, contentLength)),
           new HTTPResponseImpl(), parameter, params, requestParts);
       }
@@ -240,6 +241,12 @@ final class HTTPContextHandler implements Runnable {
           LOGGER.log(Level.WARNING, e.getMessage(), e);
         
         os.sendError(e.getError());
+      }
+      catch (InstantiationException | IllegalAccessException e) {
+        if (LOGGER.isLoggable(Level.WARNING))
+          LOGGER.log(Level.WARNING, e.getMessage(), e);
+        
+        os.sendError(HTTPStatus.INTERNAL_SERVER_ERROR);
       }
     }
     else
