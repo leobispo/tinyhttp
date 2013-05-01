@@ -50,6 +50,7 @@ final class HTTPRequestHandler implements ReaderListener {
   private final EventLoop                              manager;
   private final HTTPChannel                            channel;
   private final Hashtable<String, HTTPContext>         contexts;
+  private final Hashtable<String, HTTPStaticContext>   staticContexts;
   private final ConcurrentHashMap<String, HTTPSession> sessions;
 
   private String                          uri             = null;
@@ -77,11 +78,13 @@ final class HTTPRequestHandler implements ReaderListener {
    * @param sessions All HTTP Sessions registered on HTTP Server class.
    * 
    */
-  HTTPRequestHandler(final HTTPChannel channel, final Hashtable<String, HTTPContext> contexts, final ConcurrentHashMap<String, HTTPSession> sessions, final EventLoop manager) {
-    this.manager  = manager;
-    this.channel  = channel;
-    this.contexts = contexts;
-    this.sessions = sessions;
+  HTTPRequestHandler(final HTTPChannel channel, final Hashtable<String, HTTPContext> contexts, final Hashtable<String, HTTPStaticContext> staticContexts,
+      final ConcurrentHashMap<String, HTTPSession> sessions, final EventLoop manager) {
+    this.manager        = manager;
+    this.channel        = channel;
+    this.staticContexts = staticContexts;
+    this.contexts       = contexts;
+    this.sessions       = sessions;
     
     if (channel.isSSL())
       os = null;
@@ -161,10 +164,13 @@ final class HTTPRequestHandler implements ReaderListener {
         }
 
         if (type == HeaderType.BODY) {
-          final HTTPContext ctx = contexts.get(uri);
-          if (ctx == null) {
-            sendError("Cannot find the context for: " + uri, HTTPStatus.NOT_FOUND);
-            return;
+          HTTPContext ctx = contexts.get(uri);
+          if (ctx == null) { //Fallback to the static context!
+            final String partURI[] = uri.split("/");
+            if ((ctx = staticContexts.get("/" + ((partURI.length == 0) ?  "" : partURI[0]))) == null) {
+              sendError("Cannot find the context for: " + uri, HTTPStatus.NOT_FOUND);
+              return;
+            }
           }
 
           buffer.flip();

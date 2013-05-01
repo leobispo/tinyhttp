@@ -49,15 +49,16 @@ public final class HTTPServer implements Runnable, AcceptListener {
   private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
   
   private final ConcurrentHashMap<String, HTTPSession> sessions      = new ConcurrentHashMap<>();
-  private final EventLoop                              loop          = new EventLoop();
+  private final EventLoop                              loop;
   private final Type                                   type;
   private final File                                   sslCertificate;
   private final String                                 passphrase;
   private final InetSocketAddress                      addr;
   private final int                                    backlog;
-  private final Hashtable<String, HTTPContext>         contexts      = new Hashtable<>();
-  private boolean                                      running       = false;
-  private ServerSocketChannel                          serverChannel = null;
+  private final Hashtable<String, HTTPContext>         contexts       = new Hashtable<>();
+  private final Hashtable<String, HTTPStaticContext>   staticContexts = new Hashtable<>();
+  private boolean                                      running        = false;
+  private ServerSocketChannel                          serverChannel  = null;
   
   /**
    * Constructor.
@@ -74,6 +75,7 @@ public final class HTTPServer implements Runnable, AcceptListener {
     this.backlog        = backlog;
     this.sslCertificate = null;
     this.passphrase     = null;
+    this.loop           = new EventLoop(backlog);
   }
   
   /**
@@ -88,11 +90,12 @@ public final class HTTPServer implements Runnable, AcceptListener {
    * 
    */
   public HTTPServer(final InetSocketAddress addr, final int backlog, final File sslCertificate, final String passphrase) throws IOException {
-    this.addr    = addr;
-    this.type    = Type.HTTPS;
-    this.backlog = backlog;
+    this.addr           = addr;
+    this.type           = Type.HTTPS;
+    this.backlog        = backlog;
     this.sslCertificate = sslCertificate;
     this.passphrase     = passphrase;
+    this.loop           = new EventLoop(backlog);
   }
   
   /**
@@ -192,7 +195,7 @@ public final class HTTPServer implements Runnable, AcceptListener {
     
     try {
       manager.registerReaderListener(socket, new HTTPRequestHandler(new HTTPChannel(socket, createSSLContext(type), manager),
-        contexts, sessions, manager));
+        contexts, staticContexts, sessions, manager));
     }
     catch (Exception e) {
       if (LOGGER.isLoggable(Level.SEVERE))
@@ -210,8 +213,12 @@ public final class HTTPServer implements Runnable, AcceptListener {
    * 
    */
   public void addContext(final String path, final HTTPContext context) {
-    if (!running)
-      contexts.put(path, context);
+    if (!running) {
+      if (context instanceof HTTPStaticContext) //TODO: Check if I have here the expected path
+        staticContexts.put(path, (HTTPStaticContext) context);
+      else
+        contexts.put(path, context);
+    }
     else {
       if (LOGGER.isLoggable(Level.SEVERE))
         LOGGER.severe("Cannot add a new request while the server is running");

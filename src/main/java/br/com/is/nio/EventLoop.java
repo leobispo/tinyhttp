@@ -26,15 +26,21 @@ import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import br.com.is.nio.listener.AcceptListener;
 import br.com.is.nio.listener.ReaderListener;
+import br.com.is.nio.listener.TimerListener;
 import br.com.is.nio.listener.WriterListener;
 
 public final class EventLoop implements Runnable {
+  private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+  
   private static final int READ  = 0;
   private static final int WRITE = 1;
   
@@ -42,11 +48,13 @@ public final class EventLoop implements Runnable {
   private volatile boolean running = false;
   private Selector         selector;
 
+  private final PriorityBlockingQueue<Timer>    timers  = new PriorityBlockingQueue<>();
   private final ConcurrentLinkedQueue<Runnable> threads = new ConcurrentLinkedQueue<>();
 
-  private final ThreadPoolExecutor executor = new ThreadPoolExecutor(10, 50, 20, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(20));
+  private final ThreadPoolExecutor executor;
 
-  public EventLoop() {
+  public EventLoop(int simultaneousConnection) {
+    executor = new ThreadPoolExecutor(10, simultaneousConnection, 20, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(20));
     try {
       selector = Selector.open();
     }
@@ -61,9 +69,16 @@ public final class EventLoop implements Runnable {
     
     running = true;
 
+    long timeout = 0;
     while (running) {
       try {
-        selector.select(); //TODO: Implement the timers!!
+        if (timers.isEmpty())
+          selector.select(); 
+        else {
+          timeout = triggerExpiredTimers(System.currentTimeMillis());
+          selector.select(timeout);
+        }
+
         dispatchThreads();
         dispatchSelectionKeys();
       }
@@ -146,7 +161,8 @@ public final class EventLoop implements Runnable {
           channel.register(selector, key.interestOps(), key.attachment());
         }
         catch (ClosedChannelException e) {
-          //TODO: HANDLE THE EXCEPTION!!
+          if (LOGGER.isLoggable(Level.WARNING))
+            LOGGER.log(Level.WARNING, "Channel unexpectedly closed", e);
         }
 
         selector.wakeup();
@@ -210,7 +226,8 @@ public final class EventLoop implements Runnable {
           channel.register(selector, key.interestOps(), key.attachment());
         }
         catch (ClosedChannelException e) {
-          //TODO: HANDLE THE EXCEPTION!!
+          if (LOGGER.isLoggable(Level.WARNING))
+            LOGGER.log(Level.WARNING, "Channel unexpectedly closed", e);
         }
 
         selector.wakeup();
@@ -234,11 +251,57 @@ public final class EventLoop implements Runnable {
     }
   }
   
+  public void registerTimer(int msecs, final TimerListener listener) {
+    if (msecs < 0)
+      throw new IllegalArgumentException("Cannot have milliseconds in the past");
+    
+    if (listener == null)
+      throw new IllegalArgumentException("Cannot have invalid handler");
+
+    long expireMS = System.currentTimeMillis() + msecs;
+    timers.add(new Timer(expireMS, listener));
+    selector.wakeup();
+  }
+  
+  public void updateTimer(int msecs, final TimerListener listener) {
+    cancelTimer(listener);
+    registerTimer(msecs, listener);
+  }
+  
+  public void cancelTimer(final TimerListener listener) {
+    Iterator<Timer> timerIterator = timers.iterator();
+    while (timerIterator.hasNext()) {
+      Timer timer = timerIterator.next();
+      if (timer.handler == listener) {
+        timerIterator.remove();
+        return;
+      }
+    }
+
+    throw new IllegalArgumentException("Timer handler not found");
+  }
+  
   public void stop() {
     //TODO:WAIT THE EXECUTOR FOR SOMETIME!!
     running = false;
   }
 
+  private long triggerExpiredTimers(long now) {
+    while (!timers.isEmpty()) {
+      Timer trigger = timers.peek();
+      if (trigger.expireMS <= now) {
+        timers.poll();
+
+        trigger.handler.timeout();
+      } else {
+        long timeoutMs = trigger.expireMS - now;
+        return timeoutMs;
+      }
+    }
+
+    return 0;
+  }
+  
   private void dispatchThreads() {
     Runnable thread = null;
     while (running && (thread = threads.poll()) != null) {
@@ -270,6 +333,33 @@ public final class EventLoop implements Runnable {
       
       if (key.isValid() && key.isAcceptable())
         ((AcceptListener) key.attachment()).accept((ServerSocketChannel) key.channel(), this);
+    }
+  }
+  
+  private static final class Timer implements Comparable<Timer> {
+    public final long expireMS;
+    public final TimerListener handler;
+
+    public Timer(long expireMS, TimerListener handler) {
+      this.expireMS = expireMS;
+      this.handler      = handler;
+    }
+
+    @Override
+    public int compareTo(Timer other) {
+      if (this.expireMS < other.expireMS) return -1;
+      if (this.expireMS > other.expireMS) return 1;
+      return 0;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      throw new RuntimeException("TODO: implement");
+    }
+
+    @Override
+    public int hashCode() {
+      throw new RuntimeException("TODO: implement");
     }
   }
 }

@@ -20,6 +20,8 @@ import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.concurrent.ConcurrentHashMap;
 
+import br.com.is.nio.listener.TimerListener;
+
 /**
  * This class will store information related to an HTTP Session. Since HTTP is a stateless protocol, we
  * are storing a Cookie ISSESSIONID in the client and reversing the id to keep the session alive. To not
@@ -28,7 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author Leonardo Bispo de Oliveira
  *
  */
-public class HTTPSession {
+public class HTTPSession implements TimerListener {
   private final Hashtable<String, Object>              attributes = new Hashtable<>();
   private final ConcurrentHashMap<String, HTTPSession> sessions;
   
@@ -135,5 +137,10 @@ public class HTTPSession {
    */
   void setLastAccessTime(final long lastAccessTime) {
     this.lastAccessTime = lastAccessTime;
+  }
+
+  @Override
+  public void timeout() {
+    invalidate();
   }
 }

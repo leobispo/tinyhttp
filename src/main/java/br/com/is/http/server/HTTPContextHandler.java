@@ -46,9 +46,11 @@ import br.com.is.http.server.mediatype.MultipartFormData;
 import br.com.is.nio.EventLoop;
 import br.com.is.nio.listener.ReaderListener;
 
+//TODO: All errors must return an HTML file.
 final class HTTPContextHandler implements Runnable {
   private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
+  private static int TIME_TO_EXPIRE_SESSION_MS              = 600000;
   private static final String M_DIGEST_ALGORITHM            = "MD5";
   
   private static final String SESSION_COOKIE_NAME           = "ISSESSIONID";
@@ -118,10 +120,11 @@ final class HTTPContextHandler implements Runnable {
     
     Cookie sessionCookie = requestCookies.get(SESSION_COOKIE_NAME);
     if (sessionCookie != null) {
-      //TODO: Update the expire queue with the newest access time.
       session = sessions.get(sessionCookie.getValue());
-      if (session != null)
+      if (session != null) {
+        manager.updateTimer(TIME_TO_EXPIRE_SESSION_MS, session);
         session.setLastAccessTime(System.currentTimeMillis());
+      }
     }
     else
       session = null;
@@ -159,7 +162,10 @@ final class HTTPContextHandler implements Runnable {
       case HEAD:
         os.setIgnoreData(true);
       case GET:
-        context.doGet(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), new HTTPResponseImpl());
+        HTTPResponseImpl response = new HTTPResponseImpl();
+        context.doGet(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), response);
+        if (response.type == OutputType.PRINT_WRITER)
+          response.writer.flush();
       break;
       case POST:
         processPOST(); //TODO: Implement Transfer-Encoding:
@@ -232,9 +238,13 @@ final class HTTPContextHandler implements Runnable {
     HTTPMediaType mediaType = mediaTypes.get(type);
     if (mediaType != null) {
       try {
+        final HTTPResponseImpl response = new HTTPResponseImpl();
         mediaType = mediaType.getClass().newInstance();
         mediaType.process(context, new HTTPRequestImpl(new HTTPInputStream(channel, manager, contentLength)),
-          new HTTPResponseImpl(), parameter, params, requestParts);
+          response, parameter, params, requestParts);
+        
+        if (response.type == OutputType.PRINT_WRITER)
+          response.writer.flush();
       }
       catch (HTTPRequestException e) {
         if (LOGGER.isLoggable(Level.WARNING))
@@ -332,9 +342,9 @@ final class HTTPContextHandler implements Runnable {
     public HTTPSession getSession() {
       if (session == null) {
         session = new HTTPSession(generateUID(), sessions);
-        sessions.putIfAbsent(session.getId(), session);
+        sessions.put(session.getId(), session);
 
-        //TODO: add this session to expire queue with the newest access time.
+        manager.registerTimer(TIME_TO_EXPIRE_SESSION_MS, session);
         responseCookies.add(new Cookie(SESSION_COOKIE_NAME, session.getId()));
       }
       
