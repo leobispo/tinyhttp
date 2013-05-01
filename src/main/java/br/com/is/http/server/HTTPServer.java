@@ -212,7 +212,7 @@ public final class HTTPServer implements Runnable, AcceptListener {
    * @param context HTTP context that will be called whenever a request match to the path.
    * 
    */
-  public void addContext(final String path, final HTTPContext context) {
+  public void addContext(final String path, final HTTPContext context) { //TODO: Change. The static context will not be passed as a context. It will be handled internally.
     if (!running) {
       if (context instanceof HTTPStaticContext) //TODO: Check if I have here the expected path
         staticContexts.put(path, (HTTPStaticContext) context);

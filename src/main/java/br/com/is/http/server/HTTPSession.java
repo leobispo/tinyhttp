@@ -139,6 +139,10 @@ public class HTTPSession implements TimerListener {
     this.lastAccessTime = lastAccessTime;
   }
 
+  /**
+   * This method will be called by the Event Loop when this session be expired by timeout.
+   * 
+   */
   @Override
   public void timeout() {
     invalidate();

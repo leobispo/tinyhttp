@@ -24,6 +24,12 @@ import br.com.is.http.server.HTTPResponse;
 import br.com.is.http.server.Part;
 import br.com.is.http.server.exception.HTTPRequestException;
 
+/**
+ * This interface must be inherited whenever you want to provide a new Media type POST method.
+ * 
+ * @author Leonardo Bispo de Oliveira.
+ *
+ */
 public interface HTTPMediaType {
   void process(final HTTPContext context, final HTTPRequest request,final HTTPResponse response,
     final String parameter, final Hashtable<String, String> requestParams, 

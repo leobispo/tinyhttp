@@ -171,16 +171,16 @@ final class HTTPContextHandler implements Runnable {
         processPOST(); //TODO: Implement Transfer-Encoding:
       break;
       case PUT:
-        context.doPut(null, null);
+        context.doPut(null, null); //TODO: Implement ME!!
       break;
       case DELETE:
-        context.doDelete(null, null);
+        context.doDelete(null, null); //TODO: Implement ME!!
       break;
       case TRACE:
-        context.doTrace(null, null);
+        context.doTrace(null, null); //TODO: Implement ME!!
       break;
       case OPTIONS:
-        context.doOptions(null, null);
+        context.doOptions(null, null); //TODO: Implement ME!!
       break;
     }
 
