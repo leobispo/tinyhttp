@@ -88,6 +88,50 @@ public class HTTPTest {
     http.addContext("/test.html", ctx);
     https.addContext("/test.html", ctx);
     
+    final HTTPContext ctx1 = new HTTPContext() {
+      @Override
+      public void doGet(HTTPRequest req, HTTPResponse resp) {
+        OutputStream os = resp.getOutputStream();
+        try {
+          os.write(content.getBytes());
+          os.flush();
+        }
+        catch (IOException e) {
+          e.printStackTrace();
+        }
+      }
+      
+      @Override
+      public void doPost(HTTPRequest req, HTTPResponse resp) {
+        OutputStream os = resp.getOutputStream();
+        try {
+          os.write(content.getBytes());
+          os.flush();
+        }
+        catch (IOException e) {
+          e.printStackTrace();
+        }
+      }
+    };
+    
+    http.addContext("/test1.html", ctx1);
+    https.addContext("/test1.html", ctx1);
+    
+    final HTTPContext ctxRedirect = new HTTPContext() {
+      @Override
+      public void doGet(HTTPRequest req, HTTPResponse resp) {
+        resp.sendRedirect("test1.html");
+      }
+      
+      @Override
+      public void doPost(HTTPRequest req, HTTPResponse resp) {
+        resp.sendRedirect("test1.html");
+      }
+    };
+   
+    http.addContext("/redirect.html", ctxRedirect);
+    https.addContext("/redirect.html", ctxRedirect);
+    
     (new Thread(http)).start();
     (new Thread(https)).start();
     
@@ -187,8 +231,7 @@ public class HTTPTest {
     final InputStream is = conn.getInputStream();
     
     assertEquals("testthis is a test" + content, readInputStream(is));
-    
-    //conn.disconnect();
+
     is.close();
   }
   
@@ -213,6 +256,43 @@ public class HTTPTest {
     final InputStream is = conn.getInputStream();
     
     assertEquals("testthis is a test" + content, readInputStream(is));
+    is.close();
+  }
+  
+  @Test
+  public void testRedirectHTTP() throws Exception {
+    final URL url = new URL("http://localhost:9999/redirect.html");
+    final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    conn.setAllowUserInteraction(false);
+    conn.disconnect();
+    
+    final InputStream is = conn.getInputStream();
+    
+    assertEquals(content, readInputStream(is));
+    is.close();
+  }
+  
+  @Test
+  public void testRedirectHTTPS() throws Exception {
+    startHTTPSContext();
+
+    final String params = "param1=test&param2=this+is+a+test";
+
+    final URL url = new URL("https://localhost:9991/redirect.html"); 
+    final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    
+    conn.setDoInput(true);
+    conn.setDoOutput(true);
+    conn.setRequestMethod("POST"); 
+    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded"); 
+    conn.setRequestProperty("Content-Length", "" + Integer.toString(params.getBytes().length));
+
+    conn.getOutputStream().write(params.getBytes());
+    conn.disconnect();
+
+    final InputStream is = conn.getInputStream();
+    
+    assertEquals(content, readInputStream(is));
     is.close();
   }
   
@@ -248,4 +328,10 @@ public class HTTPTest {
 
     return sb.toString();
   }
+
+  //TODO: Test Static Context
+  //TODO: Test Static Context Range
+  //TODO: Test Static Context Directory
+  //TODO: Test ETag
+  //TODO: Test Multipart
 }

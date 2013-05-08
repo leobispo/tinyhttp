@@ -44,6 +44,14 @@ public interface Encoder {
   public byte[] flush() throws IOException;
   
   /**
+   * Close the Streams.
+   * 
+   * @throws IOException
+   * 
+   */
+  public void close() throws IOException;
+  
+  /**
    * Return the compression method name.
    * 
    * @return Compression Method Name.

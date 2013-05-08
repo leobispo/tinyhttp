@@ -21,7 +21,7 @@ import java.util.Enumeration;
 import java.util.List;
 
 public interface HTTPRequest { 
-  public enum RequestMethod { POST, GET, PUT, HEAD, DELETE, TRACE, OPTIONS };
+  public enum RequestMethod { POST, GET, PUT, HEAD, DELETE, TRACE };
   
   public List<Cookie> getCookies();
   

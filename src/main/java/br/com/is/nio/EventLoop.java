@@ -54,7 +54,7 @@ public final class EventLoop implements Runnable {
   private final ThreadPoolExecutor executor;
 
   public EventLoop(int simultaneousConnection) {
-    executor = new ThreadPoolExecutor(10, simultaneousConnection, 20, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(20));
+    executor = new ThreadPoolExecutor(2, simultaneousConnection, 20, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(20));
     try {
       selector = Selector.open();
     }
@@ -85,6 +85,10 @@ public final class EventLoop implements Runnable {
       catch(IOException e) {
         throw new RuntimeException("Problems to dispatch the selector", e);
       }
+    }
+
+    synchronized(sync) {
+      sync.notifyAll();
     }
 
     try {
@@ -277,13 +281,16 @@ public final class EventLoop implements Runnable {
         return;
       }
     }
-
-    throw new IllegalArgumentException("Timer handler not found");
   }
   
-  public void stop() {
-    //TODO:WAIT THE EXECUTOR FOR SOMETIME!!
-    running = false;
+  public void stop(int delay) throws InterruptedException {
+    synchronized(sync) {
+      running = false;
+      selector.wakeup();
+      executor.shutdownNow();
+
+      sync.wait(delay);
+    }
   }
 
   private long triggerExpiredTimers(long now) {

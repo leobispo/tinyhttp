@@ -164,6 +164,7 @@ final class HTTPRequestHandler implements ReaderListener {
         }
 
         if (type == HeaderType.BODY) {
+          //TODO: Change me to have variadic URI
           HTTPContext ctx = contexts.get(uri);
           if (ctx == null) { //Fallback to the static context!
             final String partURI[] = uri.split("/");
@@ -241,8 +242,6 @@ final class HTTPRequestHandler implements ReaderListener {
           this.method = HTTPRequest.RequestMethod.DELETE;
         else if (method[0].equalsIgnoreCase(HTTPRequest.RequestMethod.TRACE.name()))
           this.method = HTTPRequest.RequestMethod.TRACE;
-        else if (method[0].equalsIgnoreCase(HTTPRequest.RequestMethod.OPTIONS.name()))
-          this.method = HTTPRequest.RequestMethod.OPTIONS;
         else
           sendError("Request method not recognized", HTTPStatus.METHOD_NOT_ALLOWED);
 

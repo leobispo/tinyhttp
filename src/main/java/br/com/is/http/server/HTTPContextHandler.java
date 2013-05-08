@@ -161,35 +161,42 @@ final class HTTPContextHandler implements Runnable {
     switch (method) {
       case HEAD:
         os.setIgnoreData(true);
-      case GET:
+      case GET: {
         HTTPResponseImpl response = new HTTPResponseImpl();
         context.doGet(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), response);
-        if (response.type == OutputType.PRINT_WRITER)
+        if (response.type == OutputType.PRINT_WRITER) {
           response.writer.flush();
+          response.writer.close();
+        }
+      }
       break;
       case POST:
-        processPOST(); //TODO: Implement Transfer-Encoding:
+        processPOST();
       break;
       case PUT:
-        context.doPut(null, null); //TODO: Implement ME!!
+        processPUT();
       break;
-      case DELETE:
-        context.doDelete(null, null); //TODO: Implement ME!!
+      case DELETE: {
+        HTTPResponseImpl response = new HTTPResponseImpl();
+        context.doDelete(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), response);
+        if (response.type == OutputType.PRINT_WRITER) {
+          response.writer.flush();
+          response.writer.close();
+        }
+      }
       break;
       case TRACE:
-        context.doTrace(null, null); //TODO: Implement ME!!
-      break;
-      case OPTIONS:
-        context.doOptions(null, null); //TODO: Implement ME!!
+        processTRACE();
       break;
     }
 
-    os.flushCompressed();
+    os.close();
 
-    if (keepAlive != null) {
-      keepAlive.read(channel.getSocketChannel(), manager);
-    }
-    else {
+//TODO: Fix the Keep alive code!
+//    if (keepAlive != null) {
+//      keepAlive.read(channel.getSocketChannel(), manager);
+//    }
+//    else {
       try {
         channel.close();
       }
@@ -197,9 +204,67 @@ final class HTTPContextHandler implements Runnable {
         if (LOGGER.isLoggable(Level.WARNING))
           LOGGER.log(Level.WARNING, "Problems to close the HTTP Channel", e);
       }
+//    }
+  }
+
+  private void processPUT() {
+    long contentLength = 0;
+    try {
+      String length = requestHeader.get(CONTENT_LENGTH);
+
+      if (length == null) {
+        os.sendError(HTTPStatus.LENGTH_REQUIRED);
+        return;
+      }
+
+      contentLength = Long.parseLong(length);
+      if (contentLength > context.getMaxContentLenght()) {
+        os.sendError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE);
+        return;
+      }
+    }
+    catch (NumberFormatException e) {
+      os.sendError(HTTPStatus.LENGTH_REQUIRED);
+      return;
+    }
+    
+    HTTPResponseImpl response = new HTTPResponseImpl();
+    context.doPut(new HTTPRequestImpl(new HTTPInputStream(channel, manager, contentLength)), response);
+    if (response.type == OutputType.PRINT_WRITER) {
+      response.writer.flush();
+      response.writer.close();
     }
   }
 
+  private void processTRACE() {
+    long contentLength = 0;
+    try {
+      String length = requestHeader.get(CONTENT_LENGTH);
+
+      if (length == null) {
+        os.sendError(HTTPStatus.LENGTH_REQUIRED);
+        return;
+      }
+
+      contentLength = Long.parseLong(length);
+      if (contentLength > context.getMaxContentLenght()) {
+        os.sendError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE);
+        return;
+      }
+    }
+    catch (NumberFormatException e) {
+      os.sendError(HTTPStatus.LENGTH_REQUIRED);
+      return;
+    }
+    
+    HTTPResponseImpl response = new HTTPResponseImpl();
+    context.doTrace(new HTTPRequestImpl(new HTTPInputStream(channel, manager, contentLength)), response);
+    if (response.type == OutputType.PRINT_WRITER) {
+      response.writer.flush();
+      response.writer.close();
+    }
+  }
+  
   private void processPOST() {
     long contentLength = 0;
     try {
@@ -243,8 +308,10 @@ final class HTTPContextHandler implements Runnable {
         mediaType.process(context, new HTTPRequestImpl(new HTTPInputStream(channel, manager, contentLength)),
           response, parameter, params, requestParts);
         
-        if (response.type == OutputType.PRINT_WRITER)
+        if (response.type == OutputType.PRINT_WRITER) {
           response.writer.flush();
+          response.writer.close();
+        }
       }
       catch (HTTPRequestException e) {
         if (LOGGER.isLoggable(Level.WARNING))
@@ -341,7 +408,7 @@ final class HTTPContextHandler implements Runnable {
     @Override
     public HTTPSession getSession() {
       if (session == null) {
-        session = new HTTPSession(generateUID(), sessions);
+        session = new HTTPSession(generateUID(), sessions, manager);
         sessions.put(session.getId(), session);
 
         manager.registerTimer(TIME_TO_EXPIRE_SESSION_MS, session);

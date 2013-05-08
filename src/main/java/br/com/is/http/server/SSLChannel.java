@@ -240,7 +240,14 @@ class SSLChannel implements WriterListener {
 
     outBuffer.flip();
     if (outBuffer.hasRemaining()) {
-        channel.write(outBuffer);
+      if (channel.isOpen()) {
+        try {
+          channel.write(outBuffer);
+        }
+        catch (IOException e) {
+          outBuffer.clear();
+        }
+      }
     }
 
     return (!outBuffer.hasRemaining() && (result.getHandshakeStatus() != HandshakeStatus.NEED_WRAP));

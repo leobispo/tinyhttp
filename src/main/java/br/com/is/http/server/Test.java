@@ -14,7 +14,7 @@ public class Test {
   public static void main(String... args) throws InterruptedException, IOException {
     LogManager.getLogManager().getLogger(Logger.GLOBAL_LOGGER_NAME).setLevel(Level.FINE); 
  
-    HTTPServer server = new HTTPServer(new InetSocketAddress("localhost", 9999), 10);//, new File("src/test/resources/testkeys"), "password");
+    HTTPServer server = new HTTPServer(new InetSocketAddress("localhost", 9999), 10, new File("src/test/resources/testkeys"), "password");
 
     server.addContext("/", new HTTPStaticContext("/Users/leonardobispodeoliveira"));
     
@@ -27,10 +27,8 @@ public class Test {
           s = new Scanner(new File("src/test/resources/lorem.txt")).useDelimiter("\\Z");
         }
         catch (FileNotFoundException e1) {
-          // TODO Auto-generated catch block
           e1.printStackTrace();
         }
-        final String content = s.next();
         s.close();
         //resp.sendRedirect("http://www.google.com.br");
         HTTPSession session = req.getSession();

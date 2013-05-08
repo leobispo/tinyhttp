@@ -41,6 +41,7 @@ public class ApplicationXwwwFormURLEncode implements HTTPMediaType {
         parseParams(line, requestParams);
       
       context.doPost(request, response);
+      reader.close();
     }
     catch (IOException e) {
       throw new InternalServerErrorException("Problems to read data from the HTTP Channel", e);

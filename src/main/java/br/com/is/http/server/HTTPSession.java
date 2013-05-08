@@ -20,6 +20,7 @@ import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.concurrent.ConcurrentHashMap;
 
+import br.com.is.nio.EventLoop;
 import br.com.is.nio.listener.TimerListener;
 
 /**
@@ -37,6 +38,7 @@ public class HTTPSession implements TimerListener {
   private long         lastAccessTime = System.currentTimeMillis();
   private final long   creationTime   = System.currentTimeMillis();
   private final String id;
+  private final EventLoop manager;
   
   /**
    * Constructor.
@@ -44,9 +46,10 @@ public class HTTPSession implements TimerListener {
    * @param id HTTP Session unique id.
    * 
    */
-  HTTPSession(final String id, final ConcurrentHashMap<String, HTTPSession> sessions) {
+  HTTPSession(final String id, final ConcurrentHashMap<String, HTTPSession> sessions, final EventLoop manager) {
     this.id       = id;
     this.sessions = sessions;
+    this.manager  = manager;
   }
   
   /**
@@ -126,6 +129,7 @@ public class HTTPSession implements TimerListener {
    * 
    */
   public void invalidate() {
+    manager.cancelTimer(this);
     sessions.remove(this);
   }
   

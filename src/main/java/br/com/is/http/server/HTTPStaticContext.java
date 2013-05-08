@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
@@ -30,8 +31,6 @@ import java.util.StringTokenizer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import org.apache.commons.io.IOUtils;
-
 import br.com.is.http.server.exception.BadRequestException;
 import br.com.is.http.server.exception.HTTPRequestException;
 import br.com.is.http.server.exception.InternalServerErrorException;
@@ -39,6 +38,8 @@ import br.com.is.http.server.exception.RequestRangeNotSatisfiableException;
 
 //TODO: Implement the Authentication Method.!!
 public final class HTTPStaticContext extends HTTPContext {
+  private static final int DEFAULT_BUFFER_SIZE = 1024 * 4;
+  
   private static final String MIME_DEFAULT_BINARY = "application/octet-stream";
   
   private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
@@ -255,7 +256,8 @@ public final class HTTPStaticContext extends HTTPContext {
           
           is.skip(startFrom);
           
-          IOUtils.copy(is, resp.getOutputStream());
+          copy(is, resp.getOutputStream());
+          is.close();
           resp.addHeader("Content-Length", Long.toString(dataLen));
           resp.addHeader( "Content-Range", "bytes " + startFrom + "-" + endAt + "/" + fileLen);
           if (mime.startsWith("application/"))
@@ -272,7 +274,8 @@ public final class HTTPStaticContext extends HTTPContext {
     }
     else if (!etag.equals(req.getHeader("if-none-match"))) {
       try {
-        IOUtils.copy(new FileInputStream(file), resp.getOutputStream());
+        FileInputStream fis = new FileInputStream(file);
+        copy(fis, resp.getOutputStream());
       }
       catch (IOException e) {
         throw new InternalServerErrorException("Problems to open the file", e);
@@ -319,5 +322,24 @@ public final class HTTPStaticContext extends HTTPContext {
       }
     }
     return newUri;
+  }
+  
+  public static int copy(InputStream input, OutputStream output) throws IOException {
+    long count = copyLarge(input, output);
+    if (count > Integer.MAX_VALUE) {
+      return -1;
+    }
+    return (int) count;
+  }
+  
+  public static long copyLarge(InputStream input, OutputStream output) throws IOException {
+    byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
+    long count = 0;
+    int n = 0;
+    while (-1 != (n = input.read(buffer))) {
+      output.write(buffer, 0, n);
+      count += n;
+    }
+    return count;
   }
 }

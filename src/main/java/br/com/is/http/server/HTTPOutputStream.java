@@ -128,7 +128,7 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
       Timestamp timestamp = new Timestamp(date);
       
       sb.append("Date: ").append(fmt.format(timestamp)).append("\r\n");
-      sb.append("Connection: keep-alive\r\n");
+      sb.append("Connection: close\r\n"); //TODO: FIX THE KEEP-ALIVE. FOR SOME REASON IT IS NOT WORKING!
 
       if (encoder != null) {
         sb.append("Content-Encoding: ").append(encoder.getType()).append("\r\n");
@@ -236,11 +236,18 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
     flush();
   }
   
-  void flushCompressed() {
+  public void close() {
     flush();
     if (encoder != null) {
       writeImpl("0\r\n\r\n".getBytes(), 0, "0\r\n\r\n".length());
       write(channel.getSocketChannel(), manager);
+      try {
+        encoder.close();
+      }
+      catch (IOException e) {
+        if (LOGGER.isLoggable(Level.WARNING))
+          LOGGER.log(Level.WARNING, "Problems to close the encoder object", e);
+      }
     }
   }
 

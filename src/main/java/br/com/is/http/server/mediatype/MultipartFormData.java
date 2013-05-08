@@ -478,6 +478,13 @@ public class MultipartFormData implements HTTPMediaType {
     }
     
     private void deleteTempFile() {
+      if (is != null) {
+        try {
+          is.close();
+        }
+        catch (IOException e) {}
+      }
+      
       if (!moved)
         tempFile.delete();
     }

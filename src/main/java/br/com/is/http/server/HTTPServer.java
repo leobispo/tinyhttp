@@ -151,20 +151,16 @@ public final class HTTPServer implements Runnable, AcceptListener {
    * 
    */
   public void stop(int delay) {
-    for (;;) {
-//      try { //TODO: Fix ME!!
-        loop.stop();
-        try {
-          serverChannel.close();
-        }
-        catch (IOException e) {
-          e.printStackTrace();
-        }
-//        wait(delay);
-        break;
-//      }
-//      catch (InterruptedException e) {}
+    try {
+      loop.stop(delay);
+      try {
+        serverChannel.close();
+      }
+      catch (IOException e) {
+        e.printStackTrace();
+      }
     }
+    catch (InterruptedException e) {}
     
     running = false;
   }
@@ -240,7 +236,8 @@ public final class HTTPServer implements Runnable, AcceptListener {
       char[] passphrase = this.passphrase.toCharArray();
 
       KeyStore ks = KeyStore.getInstance("JKS");
-      ks.load(new FileInputStream(sslCertificate), passphrase);
+      FileInputStream fis = new FileInputStream(sslCertificate);
+      ks.load(fis, passphrase);
 
       KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
       kmf.init(ks, passphrase);
@@ -251,6 +248,7 @@ public final class HTTPServer implements Runnable, AcceptListener {
       SSLContext sslContext = SSLContext.getInstance("TLS");
       sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
       
+      fis.close();
       return sslContext;
     }
     

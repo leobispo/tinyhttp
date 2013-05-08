@@ -69,6 +69,19 @@ public class GZIPEncoder implements Encoder {
   }
   
   /**
+   * Close the Streams.
+   * 
+   * @throws IOException
+   * 
+   */
+  @Override
+  public void close() throws IOException {
+    if (gos != null)
+      gos.close();
+    os.close();
+  }
+  
+  /**
    * Return the compression method name.
    * 
    * @return Compression Method Name.

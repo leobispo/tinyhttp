@@ -25,10 +25,6 @@ public abstract class HTTPContext {
     resp.setStatus(HTTPStatus.METHOD_NOT_ALLOWED);
   }
 
-  public void doOptions(final HTTPRequest req, final HTTPResponse resp) {
-    resp.setStatus(HTTPStatus.METHOD_NOT_ALLOWED);
-  }
-
   public void doPost(final HTTPRequest req, final HTTPResponse resp) {
     resp.setStatus(HTTPStatus.METHOD_NOT_ALLOWED);
   }
