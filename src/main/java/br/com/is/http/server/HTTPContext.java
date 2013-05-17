@@ -17,6 +17,10 @@
 package br.com.is.http.server;
 
 public abstract class HTTPContext {
+  private boolean codeEncoding = false;
+  private long length          = Long.MAX_VALUE;
+  private String tempDirectory = System.getProperty("java.io.tmpdir");
+  
   public void doDelete(final HTTPRequest req, final HTTPResponse resp) {
     resp.setStatus(HTTPStatus.METHOD_NOT_ALLOWED);
   }
@@ -37,18 +41,27 @@ public abstract class HTTPContext {
     resp.setStatus(HTTPStatus.METHOD_NOT_ALLOWED);
   }
   
-  //TODO: Implement the annotation to inject this information!
+  public void setTempDirectory(final String directory) {
+    this.tempDirectory = directory;
+  }
+
   public String getTempDirectory() {
-    return System.getProperty("java.io.tmpdir");
+    return tempDirectory;
+  }
+
+  public void setMaxContentLength(final long length) {
+    this.length = length;
   }
   
-  //TODO: Implement ME!!
   public long getMaxContentLenght() {
-    return Long.MAX_VALUE;
+    return length;
   }
   
-  //TODO: Implement ME!!
+  public void setUseCodeEncoding(boolean codeEncoding) {
+    this.codeEncoding = codeEncoding;
+  }
+  
   public boolean useCodeEncoding() {
-    return true;
+    return codeEncoding;
   }
 }

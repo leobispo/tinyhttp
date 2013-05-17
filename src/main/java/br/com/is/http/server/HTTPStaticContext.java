@@ -37,7 +37,7 @@ import br.com.is.http.server.exception.InternalServerErrorException;
 import br.com.is.http.server.exception.RequestRangeNotSatisfiableException;
 
 //TODO: Implement the Authentication Method.!!
-public final class HTTPStaticContext extends HTTPContext {
+final class HTTPStaticContext extends HTTPContext {
   private static final int DEFAULT_BUFFER_SIZE = 1024 * 4;
   
   private static final String MIME_DEFAULT_BINARY = "application/octet-stream";
@@ -128,6 +128,7 @@ public final class HTTPStaticContext extends HTTPContext {
     }
   }
   
+  //TODO: The HTTP data must come from a template file
   private void processDirectory(final HTTPRequest req, final HTTPResponse resp, final File dir, final String uri) throws HTTPRequestException {
     if (!dir.canRead())
       throw new BadRequestException("Directory not accessible");

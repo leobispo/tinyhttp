@@ -37,7 +37,7 @@ final class HTTPChannel {
   private final EventLoop     manager;
   private ByteBuffer          remainingData;
   
-  private final SSLChannel    sslChannel;
+  private SSLChannel          sslChannel;
   
   /**
    * Constructor.
@@ -54,6 +54,10 @@ final class HTTPChannel {
       sslChannel = new SSLChannel(channel, sslContext, manager);
     else
       sslChannel = null;
+  }
+  
+  void resetSslContext() {
+    sslChannel = null;
   }
   
   /**

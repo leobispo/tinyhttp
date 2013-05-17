@@ -50,7 +50,6 @@ final class HTTPRequestHandler implements ReaderListener {
   private final EventLoop                              manager;
   private final HTTPChannel                            channel;
   private final Hashtable<String, HTTPContext>         contexts;
-  private final Hashtable<String, HTTPStaticContext>   staticContexts;
   private final ConcurrentHashMap<String, HTTPSession> sessions;
 
   private String                          uri             = null;
@@ -78,11 +77,10 @@ final class HTTPRequestHandler implements ReaderListener {
    * @param sessions All HTTP Sessions registered on HTTP Server class.
    * 
    */
-  HTTPRequestHandler(final HTTPChannel channel, final Hashtable<String, HTTPContext> contexts, final Hashtable<String, HTTPStaticContext> staticContexts,
-      final ConcurrentHashMap<String, HTTPSession> sessions, final EventLoop manager) {
+  HTTPRequestHandler(final HTTPChannel channel, final Hashtable<String, HTTPContext> contexts, 
+    final ConcurrentHashMap<String, HTTPSession> sessions, final EventLoop manager) {
     this.manager        = manager;
     this.channel        = channel;
-    this.staticContexts = staticContexts;
     this.contexts       = contexts;
     this.sessions       = sessions;
     
@@ -108,10 +106,7 @@ final class HTTPRequestHandler implements ReaderListener {
         os = new HTTPOutputStream(channel, manager);
     }
     catch (SSLException ssle) {
-      try {
-        channel.close();
-      }
-      catch (IOException e) {}
+      sendError(HTTPStatus.BAD_REQUEST, ssle);
       return;
     }
     catch (IOException e) {
@@ -164,14 +159,22 @@ final class HTTPRequestHandler implements ReaderListener {
         }
 
         if (type == HeaderType.BODY) {
-          //TODO: Change me to have variadic URI
-          HTTPContext ctx = contexts.get(uri);
-          if (ctx == null) { //Fallback to the static context!
-            final String partURI[] = uri.split("/");
-            if ((ctx = staticContexts.get("/" + ((partURI.length == 0) ?  "" : partURI[0]))) == null) {
-              sendError("Cannot find the context for: " + uri, HTTPStatus.NOT_FOUND);
-              return;
-            }
+          String      tmp = uri;
+          HTTPContext ctx = null;
+          while (!tmp.isEmpty()) {
+            if ((ctx = contexts.get(tmp)) != null)
+              break;
+            
+            int idx;
+            for(idx =  tmp.length() - 2; idx >= 0; --idx)
+              if (tmp.charAt(idx) == '/') break;
+            
+            tmp = (idx >= 0) ? tmp.substring(0, idx) + '/' : "";
+          }
+          
+          if (ctx == null) {
+            sendError("Cannot find the context for: " + uri, HTTPStatus.NOT_FOUND);
+            return;
           }
 
           buffer.flip();
@@ -293,6 +296,11 @@ final class HTTPRequestHandler implements ReaderListener {
     if (LOGGER.isLoggable(Level.WARNING))
       LOGGER.log(Level.WARNING, e.getMessage(), e);
     
+    if (os == null) {
+      channel.resetSslContext();
+      os = new HTTPOutputStream(channel, manager);
+    }
+
     os.sendError(error);
     try {
       channel.close();

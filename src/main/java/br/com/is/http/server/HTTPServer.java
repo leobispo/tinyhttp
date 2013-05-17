@@ -19,11 +19,17 @@ package br.com.is.http.server;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.security.KeyStore;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Hashtable;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -32,6 +38,9 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
+import org.reflections.Reflections;
+
+import br.com.is.http.server.annotation.Context;
 import br.com.is.nio.EventLoop;
 import br.com.is.nio.listener.AcceptListener;
 
@@ -56,9 +65,51 @@ public final class HTTPServer implements Runnable, AcceptListener {
   private final InetSocketAddress                      addr;
   private final int                                    backlog;
   private final Hashtable<String, HTTPContext>         contexts       = new Hashtable<>();
-  private final Hashtable<String, HTTPStaticContext>   staticContexts = new Hashtable<>();
   private boolean                                      running        = false;
   private ServerSocketChannel                          serverChannel  = null;
+  
+  /**
+   * Constructor.
+   * 
+   * @param type HTTP Method Type.
+   * @param addr Address to listen on.
+   * @param backlog The socket backlog. If this value is less than or equal to zero, then a system default value is used.
+   * @param staticLocation Path where the application will look for static contents.
+   * @param sslCertificate File containing the SSL Certificate.
+   * @param passphrase Certificate passphrase.
+   * 
+   * @throws IOException
+   * 
+   */
+  private HTTPServer(Type type, final InetSocketAddress addr, final int backlog, final String staticLocation,
+    final File sslCertificate, final String passphrase) throws IOException {
+    this.addr            = addr;
+    this.type            = type;
+    this.backlog         = backlog;
+    this.sslCertificate  = sslCertificate;
+    this.passphrase      = passphrase;
+    this.loop            = new EventLoop(backlog);
+
+    if (staticLocation != null)
+      contexts.put("/", new HTTPStaticContext(staticLocation));
+  }
+  
+  /**
+   * Constructor.
+   * 
+   * @param addr Address to listen on.
+   * @param backlog The socket backlog. If this value is less than or equal to zero, then a system default value is used.
+   * @param staticLocation Path where the application will look for static contents.
+   * @param sslCertificate File containing the SSL Certificate.
+   * @param passphrase Certificate passphrase.
+   * 
+   * @throws IOException
+   * 
+   */
+  public HTTPServer(final InetSocketAddress addr, final int backlog, final String staticLocation, final File sslCertificate,
+    final String passphrase) throws IOException {
+    this(Type.HTTPS, addr, backlog, staticLocation, sslCertificate, passphrase);
+  }
   
   /**
    * Constructor.
@@ -70,12 +121,21 @@ public final class HTTPServer implements Runnable, AcceptListener {
    * 
    */
   public HTTPServer(final InetSocketAddress addr, final int backlog) throws IOException {
-    this.addr           = addr;
-    this.type           = Type.HTTP;
-    this.backlog        = backlog;
-    this.sslCertificate = null;
-    this.passphrase     = null;
-    this.loop           = new EventLoop(backlog);
+    this(Type.HTTP, addr, backlog, null, null, null);
+  }
+  
+  /**
+   * Constructor.
+   * 
+   * @param addr Address to listen on.
+   * @param backlog The socket backlog. If this value is less than or equal to zero, then a system default value is used.
+   * @param staticLocation Path where the application will look for static contents.
+   * 
+   * @throws IOException
+   * 
+   */
+  public HTTPServer(final InetSocketAddress addr, final int backlog, final String staticLocation) throws IOException {
+    this(Type.HTTP, addr, backlog, staticLocation, null, null);
   }
   
   /**
@@ -89,13 +149,9 @@ public final class HTTPServer implements Runnable, AcceptListener {
    * @throws IOException
    * 
    */
-  public HTTPServer(final InetSocketAddress addr, final int backlog, final File sslCertificate, final String passphrase) throws IOException {
-    this.addr           = addr;
-    this.type           = Type.HTTPS;
-    this.backlog        = backlog;
-    this.sslCertificate = sslCertificate;
-    this.passphrase     = passphrase;
-    this.loop           = new EventLoop(backlog);
+  public HTTPServer(final InetSocketAddress addr, final int backlog, final File sslCertificate, 
+    final String passphrase) throws IOException {
+    this(Type.HTTPS, addr, backlog, null, sslCertificate, passphrase);
   }
   
   /**
@@ -125,6 +181,35 @@ public final class HTTPServer implements Runnable, AcceptListener {
   @Override
   public void run() {
     try {
+      Reflections reflections = new Reflections("");
+      Set<Class<?>> annotated = reflections.getTypesAnnotatedWith(br.com.is.http.server.annotation.Context.class);
+      for (Class<?> clazz : annotated) {
+        final Object newInstance    = (Object) clazz.newInstance();
+        final String urlPattern     = getClassAnnotationStringValue(clazz , Context.class, "urlPattern");
+        final String tempDirectory  = getClassAnnotationStringValue(clazz , Context.class, "tempDirectory");
+        final Long maxContentLength = getClassAnnotationLongValue(clazz   , Context.class, "maxContentLength");
+        final Boolean acceptEncode  = getClassAnnotationBooleanValue(clazz, Context.class, "acceptEncode");
+
+        HTTPAnnotatedContext ctx = new HTTPAnnotatedContext(newInstance,
+          getMethod(clazz, br.com.is.http.server.annotation.GET.class),
+          getMethod(clazz, br.com.is.http.server.annotation.POST.class),
+          getMethod(clazz, br.com.is.http.server.annotation.DELETE.class),
+          getMethod(clazz, br.com.is.http.server.annotation.TRACE.class),
+          getMethod(clazz, br.com.is.http.server.annotation.PUT.class)
+        );
+        
+        if (!tempDirectory.equals(""))
+          ctx.setTempDirectory(tempDirectory);
+
+        if (maxContentLength != null)
+          ctx.setMaxContentLength(maxContentLength);
+
+        if (acceptEncode != null)
+          ctx.setUseCodeEncoding(acceptEncode);
+
+        contexts.put(urlPattern, ctx);
+      }
+      
       if (LOGGER.isLoggable(Level.INFO))
         LOGGER.info("Starting the HTTP Server");
 
@@ -134,7 +219,7 @@ public final class HTTPServer implements Runnable, AcceptListener {
       
       loop.registerAcceptListener(serverChannel, this);
     }
-    catch (IOException e) {
+    catch (IOException | InstantiationException | IllegalAccessException e) {
       if (LOGGER.isLoggable(Level.SEVERE))
         LOGGER.log(Level.SEVERE, "Problems to create a new Server socket", e);
 
@@ -191,7 +276,7 @@ public final class HTTPServer implements Runnable, AcceptListener {
     
     try {
       manager.registerReaderListener(socket, new HTTPRequestHandler(new HTTPChannel(socket, createSSLContext(type), manager),
-        contexts, staticContexts, sessions, manager));
+        contexts, sessions, manager));
     }
     catch (Exception e) {
       if (LOGGER.isLoggable(Level.SEVERE))
@@ -208,13 +293,9 @@ public final class HTTPServer implements Runnable, AcceptListener {
    * @param context HTTP context that will be called whenever a request match to the path.
    * 
    */
-  public void addContext(final String path, final HTTPContext context) { //TODO: Change. The static context will not be passed as a context. It will be handled internally.
-    if (!running) {
-      if (context instanceof HTTPStaticContext) //TODO: Check if I have here the expected path
-        staticContexts.put(path, (HTTPStaticContext) context);
-      else
-        contexts.put(path, context);
-    }
+  public void addContext(final String path, final HTTPContext context) {
+    if (!running)
+      contexts.put(path, context);
     else {
       if (LOGGER.isLoggable(Level.SEVERE))
         LOGGER.severe("Cannot add a new request while the server is running");
@@ -254,4 +335,94 @@ public final class HTTPServer implements Runnable, AcceptListener {
     
     return sslContext;
   }
+  
+  private String getClassAnnotationStringValue(final Class<?> clazz, final Class<? extends Annotation> annotationType, final String attributeName) {
+    String value = null;
+
+    final Annotation annotation = clazz.getAnnotation(annotationType);
+    if (annotation != null) {
+      try {
+        value = (String) annotation.annotationType().getMethod(attributeName).invoke(annotation);
+      } catch (Exception e) {}
+    }
+
+    return value;
+  }
+  
+  private Long getClassAnnotationLongValue(final Class<?> clazz, final Class<? extends Annotation> annotationType, final String attributeName) {
+    Long value = null;
+
+    final Annotation annotation = clazz.getAnnotation(annotationType);
+    if (annotation != null) {
+      try {
+        value = (Long) annotation.annotationType().getMethod(attributeName).invoke(annotation);
+      } catch (Exception e) {}
+    }
+
+    return value;
+  }
+  
+  private Boolean getClassAnnotationBooleanValue(final Class<?> clazz, final Class<? extends Annotation> annotationType, final String attributeName) {
+    Boolean value = null;
+
+    final Annotation annotation = clazz.getAnnotation(annotationType);
+    if (annotation != null) {
+      try {
+        value = (Boolean) annotation.annotationType().getMethod(attributeName).invoke(annotation);
+      } catch (Exception e) {}
+    }
+
+    return value;
+  }
+
+  private static List<Method> getMethodsAnnotatedWith(final Class<?> clazz, final Class<? extends Annotation> annotationType) {
+    final List<Method> methods = new ArrayList<>();
+
+    if (clazz != Object.class) {
+      final List<Method> allMethods = new ArrayList<Method>(Arrays.asList(clazz.getDeclaredMethods()));       
+      for (final Method method : allMethods) {
+        if (annotationType == null || method.isAnnotationPresent(annotationType))
+          methods.add(method);
+      }
+    }
+    return methods;
+  }
+ 
+  private static Method getMethod(final Class<?> clazz, final Class<? extends Annotation> annotationType) {
+    Method method = null;
+    final List<Method> getMethods = getMethodsAnnotatedWith(clazz, annotationType);
+    if (getMethods.size() > 1) {
+      if (LOGGER.isLoggable(Level.SEVERE))
+        LOGGER.log(Level.SEVERE, "Problems to create a context. Context has more than 1 "  + annotationType.toString() + " method");
+
+      throw new RuntimeException("Problems to create a context. Context has more than 1 "  + annotationType.toString() + " method");
+    }
+    else if (getMethods.size() == 1) {
+      final java.lang.reflect.Type parameterTypes[] = getMethods.get(0).getGenericParameterTypes();
+      if (parameterTypes.length != 2) {
+        if (LOGGER.isLoggable(Level.SEVERE))
+          LOGGER.log(Level.SEVERE, "Incorrect number of parameters for "  + annotationType.toString() + " method");
+        
+        throw new RuntimeException("Incorrect number of parameters for "  + annotationType.toString() + " method");
+      }
+      
+      if (parameterTypes[0] != HTTPRequest.class) {
+        if (LOGGER.isLoggable(Level.SEVERE))
+          LOGGER.log(Level.SEVERE, "First parameter must be HTTPRequest");
+        
+        throw new RuntimeException("First parameter must be HTTPRequest");
+      }
+      
+      if (parameterTypes[1] != HTTPResponse.class) {
+        if (LOGGER.isLoggable(Level.SEVERE))
+          LOGGER.log(Level.SEVERE, "First parameter must be HTTPResponse");
+        
+        throw new RuntimeException("First parameter must be HTTPResponse");
+      }
+      
+      method = getMethods.get(0);
+    }
+    
+    return method;
+  } 
 }
