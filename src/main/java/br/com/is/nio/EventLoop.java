@@ -54,7 +54,7 @@ public final class EventLoop implements Runnable {
   private final ThreadPoolExecutor executor;
 
   public EventLoop(int simultaneousConnection) {
-    executor = new ThreadPoolExecutor(2, simultaneousConnection, 20, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(20));
+    executor = new ThreadPoolExecutor(10, simultaneousConnection, 20, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(20));
     try {
       selector = Selector.open();
     }

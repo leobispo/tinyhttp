@@ -202,10 +202,8 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
         break;
       }
       
-      if (buffer.hasRemaining())
-        return;
-      
-      buffer = null;
+      if (!buffer.hasRemaining())
+        buffer = null;
     }
 
     sem.release();

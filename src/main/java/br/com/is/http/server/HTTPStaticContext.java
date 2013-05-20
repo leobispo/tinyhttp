@@ -21,7 +21,6 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.ArrayList;
@@ -31,6 +30,17 @@ import java.util.StringTokenizer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.xml.bind.JAXBContext;
+import javax.xml.bind.JAXBException;
+import javax.xml.bind.annotation.XmlElement;
+import javax.xml.bind.annotation.XmlRootElement;
+import javax.xml.bind.util.JAXBSource;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.stream.StreamResult;
+import javax.xml.transform.stream.StreamSource;
+
 import br.com.is.http.server.exception.BadRequestException;
 import br.com.is.http.server.exception.HTTPRequestException;
 import br.com.is.http.server.exception.InternalServerErrorException;
@@ -38,8 +48,8 @@ import br.com.is.http.server.exception.RequestRangeNotSatisfiableException;
 
 //TODO: Implement the Authentication Method.!!
 final class HTTPStaticContext extends HTTPContext {
-  private static final int DEFAULT_BUFFER_SIZE = 1024 * 4;
-  
+  private static final int DEFAULT_BUFFER_SIZE    = 1024 * 16;
+  private static final String XSLT                = "META-INF/directory.xsl";  
   private static final String MIME_DEFAULT_BINARY = "application/octet-stream";
   
   private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
@@ -73,6 +83,21 @@ final class HTTPStaticContext extends HTTPContext {
     MimeTypes.put("zip"  , MIME_DEFAULT_BINARY            );
     MimeTypes.put("exe"  , MIME_DEFAULT_BINARY            );
     MimeTypes.put("class", MIME_DEFAULT_BINARY            );
+  }
+  
+  @SuppressWarnings("unused")
+  private static class FileInfo {
+    public String  file;
+    public boolean isDir;
+    public String  uri;
+    public long    length;
+  }
+  
+  @XmlRootElement(name = "files")
+  private static class Files
+  {
+    @XmlElement(name = "fileinfo")
+    public final List<FileInfo> files = new ArrayList<>();
   }
   
   public HTTPStaticContext(final String path) {
@@ -128,67 +153,46 @@ final class HTTPStaticContext extends HTTPContext {
     }
   }
   
-  //TODO: The HTTP data must come from a template file
   private void processDirectory(final HTTPRequest req, final HTTPResponse resp, final File dir, final String uri) throws HTTPRequestException {
     if (!dir.canRead())
       throw new BadRequestException("Directory not accessible");
     
-    PrintWriter writer = resp.getWriter();
-    writer.println("<html>");
-    writer.println("  <body>"); 
+    final Files files = new Files();
     
     if (uri.length() > 1) {
-      String u = uri.substring(0, uri.length() - 1);
-      int slash = u.lastIndexOf('/');
+      final String u = uri.substring(0, uri.length() - 1);
+      final int slash = u.lastIndexOf('/');
       if (slash >= 0 && slash  < u.length()) {
-        writer.print("    <b><a href=\"");
-        writer.print(uri.substring(0, slash + 1));
-        writer.println("\">..</a></b><br/>");
+        final FileInfo info = new FileInfo();
+        info.file   = "..";
+        info.isDir  = true;
+        info.uri    = encodeUri(uri.substring(0, slash + 1));
+        files.files.add(info);
       }
     }
     
     for (String file : dir.list()) {
-      File curr = new File(dir, file);
-      if (curr.isDirectory()) {
-        writer.print("    <b>");
-        file += "/";
-      }
-      
-      writer.print("<a href=\"");
-      writer.print(encodeUri(uri + file));
-      writer.print("\">");
-      writer.print(file);
-      writer.print("</a>");
-      
-      if (curr.isFile()) {
-        final long len = curr.length();
-        writer.print(" &nbsp;<font size=2>(");
-        if (len < 1024) {
-          writer.print(len);
-          writer.print(" bytes");
-        }
-        else if (len < (1024 * 1024)) {
-          writer.print(len / 1024);
-          writer.print(".");
-          writer.print(len % 1024 / 10 % 100);
-          writer.print(" KB");
-        }
-        else {
-          writer.print(len / (1024 * 1024));
-          writer.print(".");
-          writer.print(len % (1024 * 1024) / 10 % 100);
-          writer.print(" MB");
-        }
+      final File curr     = new File(dir, file);
+      final FileInfo info = new FileInfo();
 
-        writer.println(")</font><br>");
-      }
-      else
-        writer.println("</b><br>");
+      info.file   = file;
+      info.isDir  = curr.isDirectory();
+      info.uri    = encodeUri(uri + file);
+      info.length = curr.length();
+      files.files.add(info);
     }
-  
-    writer.println("  </body>");
-    writer.println("</html>");
     
+    try {
+      final TransformerFactory tf   = TransformerFactory.newInstance();
+      final Transformer transformer = tf.newTransformer(new StreamSource(this.getClass().getClassLoader().getResourceAsStream(XSLT)));
+      final JAXBSource source       = new JAXBSource(JAXBContext.newInstance(Files.class), files);
+      final StreamResult result     = new StreamResult(resp.getOutputStream());
+
+      transformer.transform(source, result);
+    }
+    catch (TransformerException | JAXBException e) {
+      throw new InternalServerErrorException("Problems to Generate the directory template", e);
+    }
   }
   
   private void processFile(final HTTPRequest req, final HTTPResponse resp, final File file) throws HTTPRequestException {
@@ -274,6 +278,10 @@ final class HTTPStaticContext extends HTTPContext {
       }
     }
     else if (!etag.equals(req.getHeader("if-none-match"))) {
+      resp.addHeader("Content-Length", Long.toString(fileLen));
+      if (mime.startsWith( "application/" ))
+        resp.addHeader("Content-Disposition", "attachment; filename=\"" + file.getName() + "\"");
+
       try {
         FileInputStream fis = new FileInputStream(file);
         copy(fis, resp.getOutputStream());
@@ -281,11 +289,6 @@ final class HTTPStaticContext extends HTTPContext {
       catch (IOException e) {
         throw new InternalServerErrorException("Problems to open the file", e);
       }
-
-      resp.addHeader("Content-Length", Long.toString(fileLen));
-
-      if (mime.startsWith( "application/" ))
-        resp.addHeader("Content-Disposition", "attachment; filename=\"" + file.getName() + "\"");
 
       resp.addHeader("ETag", etag);
     }
@@ -337,10 +340,17 @@ final class HTTPStaticContext extends HTTPContext {
     byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
     long count = 0;
     int n = 0;
+    int flush = 0;
     while (-1 != (n = input.read(buffer))) {
       output.write(buffer, 0, n);
       count += n;
+      flush += n;
+      if (flush > (DEFAULT_BUFFER_SIZE * 30000)) {
+        output.flush();
+        flush = 0;
+      }
     }
+    
     return count;
   }
 }
