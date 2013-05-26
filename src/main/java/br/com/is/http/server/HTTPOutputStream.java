@@ -18,6 +18,7 @@ package br.com.is.http.server;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.StringReader;
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
@@ -36,6 +37,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.xml.transform.Source;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.stream.StreamResult;
+import javax.xml.transform.stream.StreamSource;
+
 import br.com.is.http.server.encoder.Encoder;
 import br.com.is.nio.ByteBufferFifo;
 import br.com.is.nio.EventLoop;
@@ -51,7 +59,8 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
   
   private final EventLoop   manager;
   private final HTTPChannel channel;
-  
+  private String uri;
+
   private final Semaphore sem = new Semaphore(0);
   
   private ByteBuffer buffer   = null;
@@ -230,6 +239,21 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
       responseStatus = new AtomicInteger(error.getValue());
     else
       responseStatus.set(error.getValue());
+
+    try {
+      final TransformerFactory tf   = TransformerFactory.newInstance();
+      final Transformer transformer = tf.newTransformer(new StreamSource(this.getClass().getClassLoader().getResourceAsStream("META-INF/" + Integer.toString(error.getValue()) + ".xsl")));
+      final Source source           = new StreamSource(new StringReader("<uri>" + uri + "</uri>"));
+      final StreamResult result     = new StreamResult(this);
+
+      transformer.transform(source, result);
+    }
+    catch (TransformerException e) {
+      if (LOGGER.isLoggable(Level.WARNING))
+        LOGGER.log(Level.WARNING, "Problems to Generate the 307 page template", e);
+    }
+    
+    setIgnoreData(true);
     
     flush();
   }
@@ -278,5 +302,9 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
   
   boolean isHeaderCreated() {
     return headerCreated;
+  }
+
+  void setUri(String uri) {
+    this.uri = uri;
   }
 }

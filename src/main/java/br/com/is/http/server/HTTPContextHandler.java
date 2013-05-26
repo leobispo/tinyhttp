@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
+import java.io.StringReader;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
@@ -37,6 +38,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.xml.transform.Source;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.stream.StreamResult;
+import javax.xml.transform.stream.StreamSource;
+
 import br.com.is.http.server.encoder.Encoder;
 import br.com.is.http.server.encoder.GZIPEncoder;
 import br.com.is.http.server.exception.HTTPRequestException;
@@ -46,7 +54,6 @@ import br.com.is.http.server.mediatype.MultipartFormData;
 import br.com.is.nio.EventLoop;
 import br.com.is.nio.listener.ReaderListener;
 
-//TODO: All errors must return an HTML file.
 final class HTTPContextHandler implements Runnable {
   private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
@@ -164,7 +171,9 @@ final class HTTPContextHandler implements Runnable {
       case GET: {
         HTTPResponseImpl response = new HTTPResponseImpl();
         context.doGet(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), response);
-        if (response.type == OutputType.PRINT_WRITER) {
+        if (response.getStatus() >= 400)
+          os.sendError(HTTPStatus.fromInt(response.getStatus()));
+        else if (response.type == OutputType.PRINT_WRITER) {
           response.writer.flush();
           response.writer.close();
         }
@@ -179,6 +188,8 @@ final class HTTPContextHandler implements Runnable {
       case DELETE: {
         HTTPResponseImpl response = new HTTPResponseImpl();
         context.doDelete(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), response);
+        if (response.getStatus() >= 400)
+          os.sendError(HTTPStatus.fromInt(response.getStatus()));
         if (response.type == OutputType.PRINT_WRITER) {
           response.writer.flush();
           response.writer.close();
@@ -230,7 +241,9 @@ final class HTTPContextHandler implements Runnable {
     
     HTTPResponseImpl response = new HTTPResponseImpl();
     context.doPut(new HTTPRequestImpl(new HTTPInputStream(channel, manager, contentLength)), response);
-    if (response.type == OutputType.PRINT_WRITER) {
+    if (response.getStatus() >= 400)
+      os.sendError(HTTPStatus.fromInt(response.getStatus()));
+    else if (response.type == OutputType.PRINT_WRITER) {
       response.writer.flush();
       response.writer.close();
     }
@@ -259,6 +272,8 @@ final class HTTPContextHandler implements Runnable {
     
     HTTPResponseImpl response = new HTTPResponseImpl();
     context.doTrace(new HTTPRequestImpl(new HTTPInputStream(channel, manager, contentLength)), response);
+    if (response.getStatus() >= 400)
+      os.sendError(HTTPStatus.fromInt(response.getStatus()));
     if (response.type == OutputType.PRINT_WRITER) {
       response.writer.flush();
       response.writer.close();
@@ -530,24 +545,18 @@ final class HTTPContextHandler implements Runnable {
       responseHeader.clear();
       responseHeader.put("Location", location);
       
-      // TODO: Maybe this should come from a template file.
-      final StringBuilder sb = new StringBuilder();
-      sb.append("<html>")
-        .append("<head>")
-        .append("<title>Moved</title>")
-        .append("</head><body>")
-        .append("<h1>Moved</h1>")
-        .append("<p>This page has moved to <a href='")
-        .append(location)
-        .append("'>")
-        .append(location)
-        .append("</a>.</p></body>")
-        .append("</html>");
-      
-      os.clear();
-      
-      final String page = sb.toString();
-      os.write(page.getBytes(), 0, page.length());
+      try {
+        final TransformerFactory tf   = TransformerFactory.newInstance();
+        final Transformer transformer = tf.newTransformer(new StreamSource(this.getClass().getClassLoader().getResourceAsStream("META-INF/307.xsl")));
+        final Source source           = new StreamSource(new StringReader("<uri>" + location + "</uri>"));
+        final StreamResult result     = new StreamResult(os);
+
+        transformer.transform(source, result);
+      }
+      catch (TransformerException e) {
+        if (LOGGER.isLoggable(Level.WARNING))
+          LOGGER.log(Level.WARNING, "Problems to Generate the 307 page template", e);
+      }
       
       os.setIgnoreData(true);
     }

@@ -135,7 +135,7 @@ public class HTTPTest {
     (new Thread(http)).start();
     (new Thread(https)).start();
     
-    Thread.sleep(100);
+    Thread.sleep(1000);
   }
   
   @After

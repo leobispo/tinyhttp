@@ -17,7 +17,7 @@
 package br.com.is.http.server;
 
 public abstract class HTTPContext {
-  private boolean codeEncoding = false;
+  private boolean codeEncoding = true;
   private long length          = Long.MAX_VALUE;
   private String tempDirectory = System.getProperty("java.io.tmpdir");
   

@@ -249,6 +249,8 @@ final class HTTPRequestHandler implements ReaderListener {
           sendError("Request method not recognized", HTTPStatus.METHOD_NOT_ALLOWED);
 
         uri = decodeUri(method[1]);
+        os.setUri(uri);
+        
         header.put("HTTP-Version", method[2].trim());
         
         type = HeaderType.ATTRIBUTE;

@@ -138,8 +138,8 @@ final class HTTPChannel {
         remainingData.put(dst.array(), maxLength - 1, dst.limit() - maxLength);
       }
       catch (Exception e) {
-        System.out.println("HERE");
       }
+      
       dst.limit(maxLength + 1);
 
       remainingData.position(maxLength);

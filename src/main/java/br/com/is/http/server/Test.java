@@ -1,26 +1,19 @@
 package br.com.is.http.server;
 
-import br.com.is.http.server.annotation.Context;
-import br.com.is.http.server.annotation.GET;
-
-import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Scanner;
 import java.util.logging.Level;
 import java.util.logging.LogManager;
 import java.util.logging.Logger;
 
-@Context(acceptEncode = true, tempDirectory = "/tmp", urlPattern="/test.html")
+import br.com.is.http.server.annotation.Context;
+import br.com.is.http.server.annotation.GET;
+
+@Context(acceptEncode = true, tempDirectory = "/tmp", urlPattern="/ctx.html")
 class Ctx
 {
   @GET
   public void get(HTTPRequest req, HTTPResponse resp) {
-    System.out.println("HERE");
   }
 }
 public class Test {
