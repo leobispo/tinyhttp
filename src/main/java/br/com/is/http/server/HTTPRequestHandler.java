@@ -395,18 +395,27 @@ final class HTTPRequestHandler implements ReaderListener {
   private String decodeHEXUri(final String src) {
     final StringBuilder sb = new StringBuilder();
     
+    boolean isSlash = false;
     for (int i = 0; i < src.length(); ++i) {
       char ch = src.charAt(i);
       switch (ch) {
         case '+':
           sb.append(' ');
+          isSlash = false;
           break;
+        case '/':
+          if (!isSlash)
+            sb.append(ch);
+          isSlash = true;
+        break;
         case '%':
           sb.append((char) Integer.parseInt(src.substring(i + 1, i + 3), 16));
           i += 2;
+          isSlash = false;
           break;
         default:
           sb.append(ch);
+          isSlash = false;
       }
     }
     
