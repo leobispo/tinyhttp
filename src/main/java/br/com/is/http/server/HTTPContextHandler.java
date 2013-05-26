@@ -190,7 +190,7 @@ final class HTTPContextHandler implements Runnable {
         context.doDelete(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), response);
         if (response.getStatus() >= 400)
           os.sendError(HTTPStatus.fromInt(response.getStatus()));
-        if (response.type == OutputType.PRINT_WRITER) {
+        else if (response.type == OutputType.PRINT_WRITER) {
           response.writer.flush();
           response.writer.close();
         }
@@ -274,7 +274,7 @@ final class HTTPContextHandler implements Runnable {
     context.doTrace(new HTTPRequestImpl(new HTTPInputStream(channel, manager, contentLength)), response);
     if (response.getStatus() >= 400)
       os.sendError(HTTPStatus.fromInt(response.getStatus()));
-    if (response.type == OutputType.PRINT_WRITER) {
+    else if (response.type == OutputType.PRINT_WRITER) {
       response.writer.flush();
       response.writer.close();
     }

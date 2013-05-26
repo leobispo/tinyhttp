@@ -26,5 +26,5 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 @Retention(RUNTIME)
 @HTTPMethod("POST")
 public @interface POST {
-  String value();
+  String value() default "POST";
 }

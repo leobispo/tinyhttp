@@ -26,5 +26,5 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 @Retention(RUNTIME)
 @HTTPMethod("PUT")
 public @interface PUT {
-  String value();
+  String value() default "PUT";
 }

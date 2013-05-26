@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -27,6 +28,38 @@ import br.com.is.http.server.HTTPContext;
 import br.com.is.http.server.HTTPRequest;
 import br.com.is.http.server.HTTPResponse;
 import br.com.is.http.server.HTTPServer;
+import br.com.is.http.server.annotation.Context;
+import br.com.is.http.server.annotation.GET;
+import br.com.is.http.server.annotation.POST;
+
+@Context(urlPattern="/test/annotation.html")
+class AnnotationTest {
+  @GET
+  @POST
+  public void process(HTTPRequest req, HTTPResponse resp) {
+    try {
+      @SuppressWarnings("resource")
+      final Scanner scanner = (new Scanner(new File("src/test/resources/lorem.txt"))).useDelimiter("\\Z");
+
+      final String content = scanner.next();
+      scanner.close();
+
+      final OutputStream os = resp.getOutputStream();
+      try {
+        os.write(req.getParameter("param1").getBytes());
+        os.flush();
+        os.write(req.getParameter("param2").getBytes());
+        os.flush();
+        os.write(content.getBytes());
+        os.flush();
+      }
+      catch (IOException e) {
+        e.printStackTrace();
+      } 
+    }
+    catch (FileNotFoundException e1) {}
+  }
+}
 
 public class HTTPTest {
   private String     content = null;
@@ -162,6 +195,41 @@ public class HTTPTest {
     final String params = "param1=test&param2=this+is+a+test";
 
     final URL url = new URL("http://localhost:9999/test.html"); 
+    final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    
+    conn.setDoInput(true);
+    conn.setDoOutput(true);
+    conn.setRequestMethod("POST"); 
+    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded"); 
+    conn.setRequestProperty("Content-Length", "" + Integer.toString(params.getBytes().length));
+
+    conn.getOutputStream().write(params.getBytes());
+    conn.disconnect();
+
+    final InputStream is = conn.getInputStream();
+    
+    assertEquals("testthis is a test" + content, readInputStream(is));
+    is.close();
+  }
+  
+  @Test
+  public void testAnnotationGET() throws Exception {
+    final URL url = new URL("http://localhost:9999/test/annotation.html?param1=test&param2=this+is+a+test");
+    final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    conn.setAllowUserInteraction(false);
+    conn.disconnect();
+    
+    final InputStream is = conn.getInputStream();
+    
+    assertEquals("testthis is a test" + content, readInputStream(is));
+    is.close();
+  }
+  
+  @Test
+  public void testAnnotationPOST() throws Exception {
+    final String params = "param1=test&param2=this+is+a+test";
+
+    final URL url = new URL("http://localhost:9999/test/annotation.html"); 
     final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
     
     conn.setDoInput(true);
@@ -334,5 +402,4 @@ public class HTTPTest {
   //TODO: Test Static Context Directory
   //TODO: Test ETag
   //TODO: Test Multipart
-  //TODO: Test the annotations
 }

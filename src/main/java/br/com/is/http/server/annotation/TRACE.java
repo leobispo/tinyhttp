@@ -26,5 +26,5 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 @Retention(RUNTIME)
 @HTTPMethod("TRACE")
 public @interface TRACE {
-  String value();
+  String value() default "TRACE";
 }
