@@ -77,8 +77,8 @@ public class HTTPTest {
   @Before
   @SuppressWarnings("resource")
   public final void setUp() throws Exception { 
-    http  = new HTTPServer(new InetSocketAddress("localhost", 9999), 10);
-    https = new HTTPServer(new InetSocketAddress("localhost", 9991), 10, new File("src/test/resources/testkeys"), "password");
+    http  = new HTTPServer(new InetSocketAddress("localhost", 9999), 10, "src/test/resources");
+    https = new HTTPServer(new InetSocketAddress("localhost", 9991), 10, "src/test/resources", new File("src/test/resources/testkeys"), "password");
 
     final Scanner scanner = (new Scanner(new File("src/test/resources/lorem.txt"))).useDelimiter("\\Z");
     content = scanner.next();
@@ -248,6 +248,104 @@ public class HTTPTest {
   }
   
   @Test
+  public void testStaticContext() throws Exception {
+    final URL url = new URL("http://localhost:9999/static.html");
+    final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    conn.setAllowUserInteraction(false);
+    conn.disconnect();
+    
+    final InputStream is = conn.getInputStream();
+    
+    @SuppressWarnings("resource")
+    final Scanner scanner = (new Scanner(new File("src/test/resources/static.html"))).useDelimiter("\\Z");
+    final String data = scanner.next();
+    scanner.close();
+    
+    assertEquals(data, readInputStream(is));
+    is.close();
+  }
+  
+  @Test
+  public void testStaticContextCache() throws Exception {
+    final URL url = new URL("http://localhost:9999/static.html");
+    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    conn.setUseCaches(false);
+    conn.setDefaultUseCaches(false); 
+    conn.setAllowUserInteraction(false);
+    conn.disconnect();
+
+    final String etag = conn.getHeaderField("ETag");
+    
+    conn = (HttpURLConnection) url.openConnection();
+    conn.setRequestProperty("If-None-Match", etag);
+    conn.setUseCaches(false);
+    conn.setDefaultUseCaches(false); 
+    conn.setAllowUserInteraction(false);
+    conn.disconnect();
+
+    assertEquals(304, conn.getResponseCode());
+  }
+  
+  @Test
+  public void testStaticContextDirectory() throws Exception {
+    final URL url = new URL("http://localhost:9999");
+    final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    conn.setAllowUserInteraction(false);
+    conn.disconnect();
+    
+    final InputStream is = conn.getInputStream();
+    
+    @SuppressWarnings("resource")
+    final Scanner scanner = (new Scanner(new File("src/test/resources/directory.html"))).useDelimiter("\\Z");
+    final String data = scanner.next();
+    scanner.close();
+    
+    assertEquals(data, readInputStream(is));
+    is.close();
+  }
+  
+  @Test
+  public void testStaticContextRange() throws Exception {
+    final URL url = new URL("http://localhost:9999/directory.html");
+    {
+      final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+      conn.setRequestProperty("Range", "bytes=400-");
+      conn.setAllowUserInteraction(false);
+      conn.disconnect();
+    
+      final InputStream is = conn.getInputStream();
+    
+      final String data = "    <font size=\"2\">(\n              2 KB)</font>\n<br>\n</body>\n</html>\n\n";
+    
+      assertEquals(data, readInputStream(is));
+      is.close();
+    }
+    
+    {
+      final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+      conn.setRequestProperty("Range", "bytes=400-410");
+      conn.setAllowUserInteraction(false);
+      conn.disconnect();
+
+      final InputStream is = conn.getInputStream();
+
+      final String data = "    <font s";
+
+      assertEquals(data, readInputStream(is));
+      is.close();
+    }
+    
+    {
+      final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+      conn.setRequestProperty("Range", "bytes=500-510");
+      conn.setAllowUserInteraction(false);
+      conn.disconnect();
+
+      assertEquals(416, conn.getResponseCode());
+    }
+  }
+  
+  @Test
   public void testGETGZIP() throws Exception {
     final URL url = new URL("http://localhost:9999/test.html?param1=test&param2=this+is+a+test");
     final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -397,9 +495,5 @@ public class HTTPTest {
     return sb.toString();
   }
 
-  //TODO: Test Static Context
-  //TODO: Test Static Context Range
-  //TODO: Test Static Context Directory
-  //TODO: Test ETag
   //TODO: Test Multipart
 }

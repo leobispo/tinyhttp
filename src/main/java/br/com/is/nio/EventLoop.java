@@ -192,7 +192,8 @@ public final class EventLoop implements Runnable {
       if (key != null && key.isValid() && (key.interestOps() & SelectionKey.OP_READ) != 0) {
         ((Object[]) key.attachment())[READ] = null;
 
-        key.interestOps(key.interestOps() & ~SelectionKey.OP_READ);
+        if (selector.isOpen())
+          key.interestOps(key.interestOps() & ~SelectionKey.OP_READ);
         return true;
       }
 
@@ -247,7 +248,8 @@ public final class EventLoop implements Runnable {
       if (key != null && key.isValid() && (key.interestOps() & SelectionKey.OP_WRITE) != 0) {
         ((Object[]) key.attachment())[WRITE] = null;
 
-        key.interestOps(key.interestOps() & ~SelectionKey.OP_WRITE);
+        if (selector.isOpen())
+          key.interestOps(key.interestOps() & ~SelectionKey.OP_WRITE);
         return true;
       }
 

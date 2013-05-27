@@ -17,6 +17,7 @@
 package br.com.is.http.server;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.StringReader;
 import java.nio.BufferOverflowException;
@@ -240,17 +241,21 @@ final class HTTPOutputStream extends OutputStream implements WriterListener {
     else
       responseStatus.set(error.getValue());
 
-    try {
-      final TransformerFactory tf   = TransformerFactory.newInstance();
-      final Transformer transformer = tf.newTransformer(new StreamSource(this.getClass().getClassLoader().getResourceAsStream("META-INF/" + Integer.toString(error.getValue()) + ".xsl")));
-      final Source source           = new StreamSource(new StringReader("<uri>" + uri + "</uri>"));
-      final StreamResult result     = new StreamResult(this);
+    InputStream is = this.getClass().getClassLoader().getResourceAsStream("META-INF/" + Integer.toString(error.getValue()) + ".xsl");
+    if (is != null) {
+      try {
+        final TransformerFactory tf   = TransformerFactory.newInstance();
 
-      transformer.transform(source, result);
-    }
-    catch (TransformerException e) {
-      if (LOGGER.isLoggable(Level.WARNING))
-        LOGGER.log(Level.WARNING, "Problems to Generate the 307 page template", e);
+        final Transformer transformer = tf.newTransformer(new StreamSource(is));
+        final Source source           = new StreamSource(new StringReader("<uri>" + uri + "</uri>"));
+        final StreamResult result     = new StreamResult(this);
+
+        transformer.transform(source, result);
+      }
+      catch (TransformerException e) {
+        if (LOGGER.isLoggable(Level.WARNING))
+          LOGGER.log(Level.WARNING, "Problems to Generate the 307 page template", e);
+      }
     }
     
     setIgnoreData(true);

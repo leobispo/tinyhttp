@@ -221,20 +221,23 @@ final class HTTPStaticContext extends HTTPContext {
         range = range.substring("bytes=".length());
         final int minus = range.indexOf('-');
         try {
-          if ( minus > 0 ) {
-            startFrom = Long.parseLong( range.substring(0, minus));
-            endAt = Long.parseLong(range.substring(minus + 1));
+          if (minus > 0) {
+            startFrom = Long.parseLong(range.substring(0, minus));
+            endAt     = Long.parseLong(range.substring(minus + 1));
           }
         }
-        catch (NumberFormatException e) {
-          throw new BadRequestException("Invalid number", e);
-        }
+        catch (NumberFormatException e) {}
       }
     }
     
     final long fileLen = file.length();
     if (range != null && startFrom >= 0) {
-      if (startFrom >= fileLen) {
+      if (endAt < 0)
+        endAt = fileLen - 1;
+
+      final long lenToRead = endAt - startFrom + 1;
+
+      if (startFrom >= fileLen || lenToRead <= 0) {
         resp.addHeader("Content-Range", "bytes 0-0/" + fileLen);
         resp.addHeader("ETag", etag);
 
@@ -244,26 +247,14 @@ final class HTTPStaticContext extends HTTPContext {
         throw new RequestRangeNotSatisfiableException("Not valid range passed in the HTTP header");
       }
       else {
-        if (endAt < 0)
-          endAt = fileLen - 1;
-
-        long newLen = endAt - startFrom + 1;
-        if (newLen < 0)
-          newLen = 0;
-
-        final long dataLen = newLen;
         try {
-          final InputStream is = new FileInputStream(file) {
-            public int available() throws IOException {
-              return (int) dataLen;
-            }
-          };
+          final InputStream is = new FileInputStream(file);
           
           is.skip(startFrom);
           
-          copy(is, resp.getOutputStream());
+          copy(is, resp.getOutputStream(), lenToRead);
           is.close();
-          resp.addHeader("Content-Length", Long.toString(dataLen));
+          resp.addHeader("Content-Length", Long.toString(lenToRead));
           resp.addHeader( "Content-Range", "bytes " + startFrom + "-" + endAt + "/" + fileLen);
           if (mime.startsWith("application/"))
             resp.addHeader("Content-Disposition", "attachment; filename=\"" + file.getName() + "\"");
@@ -279,12 +270,12 @@ final class HTTPStaticContext extends HTTPContext {
     }
     else if (!etag.equals(req.getHeader("if-none-match"))) {
       resp.addHeader("Content-Length", Long.toString(fileLen));
-      if (mime.startsWith( "application/" ))
+      if (mime.startsWith("application/" ))
         resp.addHeader("Content-Disposition", "attachment; filename=\"" + file.getName() + "\"");
 
       try {
         FileInputStream fis = new FileInputStream(file);
-        copy(fis, resp.getOutputStream());
+        copy(fis, resp.getOutputStream(), fileLen);
       }
       catch (IOException e) {
         throw new InternalServerErrorException("Problems to open the file", e);
@@ -328,27 +319,29 @@ final class HTTPStaticContext extends HTTPContext {
     return newUri;
   }
   
-  public static int copy(InputStream input, OutputStream output) throws IOException {
-    long count = copyLarge(input, output);
+  public static int copy(InputStream input, OutputStream output, long lenToRead) throws IOException {
+    long count = copyLarge(input, output, lenToRead);
     if (count > Integer.MAX_VALUE) {
       return -1;
     }
     return (int) count;
   }
   
-  public static long copyLarge(InputStream input, OutputStream output) throws IOException {
+  public static long copyLarge(InputStream input, OutputStream output, long lenToRead) throws IOException {
     byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
     long count = 0;
     int n = 0;
     int flush = 0;
-    while (-1 != (n = input.read(buffer))) {
-      output.write(buffer, 0, n);
-      count += n;
-      flush += n;
+    while (-1 != (n = input.read(buffer)) && lenToRead > 0) {
+      final int copied = n > (int) lenToRead ? (int) lenToRead : n;
+      output.write(buffer, 0, copied);
+      count += copied;
+      flush += copied;
       if (flush > (DEFAULT_BUFFER_SIZE * 30000)) {
         output.flush();
         flush = 0;
       }
+      lenToRead -= copied;
     }
     
     return count;
