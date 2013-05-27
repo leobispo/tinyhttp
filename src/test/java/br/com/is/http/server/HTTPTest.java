@@ -61,6 +61,15 @@ class AnnotationTest {
   }
 }
 
+@Context(urlPattern="/testerror.html")
+class ErrorTest {
+  @GET
+  @POST
+  public void process(HTTPRequest req, HTTPResponse resp) {
+    throw new RuntimeException("ERROR");
+  }
+}
+
 public class HTTPTest {
   private String     content = null;
   private HTTPServer http    = null;
@@ -164,6 +173,20 @@ public class HTTPTest {
    
     http.addContext("/redirect.html", ctxRedirect);
     https.addContext("/redirect.html", ctxRedirect);
+    
+    final HTTPContext ctxTestError = new HTTPContext() {
+      @Override
+      public void doGet(HTTPRequest req, HTTPResponse resp) {
+        throw new RuntimeException("ERROR");
+      }
+      
+      @Override
+      public void doPost(HTTPRequest req, HTTPResponse resp) {
+        throw new RuntimeException("ERROR");
+      }
+    };
+   
+    http.addContext("/testerror1.html", ctxTestError);
     
     (new Thread(http)).start();
     (new Thread(https)).start();
@@ -426,6 +449,49 @@ public class HTTPTest {
   }
   
   @Test
+  public void test404() throws Exception {
+    final URL url = new URL("http://localhost:9999/notfound.html");
+    final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    conn.setAllowUserInteraction(false);
+    conn.disconnect();
+    
+    assertEquals(404, conn.getResponseCode());
+  }
+  
+  @Test
+  public void test400() throws Exception {
+    {
+      final URL url = new URL("http://localhost:9991/");
+      final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+      conn.setAllowUserInteraction(false);
+      conn.disconnect();
+    
+      assertEquals(400, conn.getResponseCode());
+    }
+  }
+  
+  @Test
+  public void test500() throws Exception {
+    {
+      final URL url = new URL("http://localhost:9999/testerror.html");
+      final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+      conn.setAllowUserInteraction(false);
+      conn.disconnect();
+    
+      assertEquals(500, conn.getResponseCode());
+    }
+    
+    {
+      final URL url = new URL("http://localhost:9999/testerror1.html");
+      final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+      conn.setAllowUserInteraction(false);
+      conn.disconnect();
+    
+      assertEquals(500, conn.getResponseCode());
+    }
+  }
+  
+  @Test
   public void testRedirectHTTP() throws Exception {
     final URL url = new URL("http://localhost:9999/redirect.html");
     final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -494,6 +560,6 @@ public class HTTPTest {
 
     return sb.toString();
   }
-
+  
   //TODO: Test Multipart
 }

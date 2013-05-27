@@ -43,7 +43,7 @@ final class HTTPAnnotatedContext extends HTTPContext {
         deleteMethod.invoke(clazz, req, resp);
       }
       catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-        super.doDelete(req, resp);
+        resp.setStatus(HTTPStatus.INTERNAL_SERVER_ERROR);
       }
     }
     else
@@ -56,7 +56,7 @@ final class HTTPAnnotatedContext extends HTTPContext {
         getMethod.invoke(clazz, req, resp);
       }
       catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-        super.doGet(req, resp);
+        resp.setStatus(HTTPStatus.INTERNAL_SERVER_ERROR);
       }
     }
     else
@@ -69,7 +69,7 @@ final class HTTPAnnotatedContext extends HTTPContext {
         postMethod.invoke(clazz, req, resp);
       }
       catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-        super.doPost(req, resp);
+        resp.setStatus(HTTPStatus.INTERNAL_SERVER_ERROR);
       }
     }
     else
@@ -82,7 +82,7 @@ final class HTTPAnnotatedContext extends HTTPContext {
         putMethod.invoke(clazz, req, resp);
       }
       catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-        super.doPut(req, resp);
+        resp.setStatus(HTTPStatus.INTERNAL_SERVER_ERROR);
       }
     }
     else
@@ -95,7 +95,7 @@ final class HTTPAnnotatedContext extends HTTPContext {
         traceMethod.invoke(clazz, req, resp);
       }
       catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-        super.doTrace(req, resp);
+        resp.setStatus(HTTPStatus.INTERNAL_SERVER_ERROR);
       }
     }
     else

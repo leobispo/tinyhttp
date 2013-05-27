@@ -165,40 +165,45 @@ final class HTTPContextHandler implements Runnable {
       }
     }
 
-    switch (method) {
-      case HEAD:
-        os.setIgnoreData(true);
-      case GET: {
-        HTTPResponseImpl response = new HTTPResponseImpl();
-        context.doGet(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), response);
-        if (response.getStatus() >= 400)
-          os.sendError(HTTPStatus.fromInt(response.getStatus()));
-        else if (response.type == OutputType.PRINT_WRITER) {
-          response.writer.flush();
-          response.writer.close();
+    try {
+      switch (method) {
+        case HEAD:
+          os.setIgnoreData(true);
+        case GET: {
+          HTTPResponseImpl response = new HTTPResponseImpl();
+          context.doGet(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), response);
+          if (response.getStatus() >= 400)
+            os.sendError(HTTPStatus.fromInt(response.getStatus()));
+          else if (response.type == OutputType.PRINT_WRITER) {
+            response.writer.flush();
+            response.writer.close();
+          }
         }
-      }
-      break;
-      case POST:
-        processPOST();
-      break;
-      case PUT:
-        processPUT();
-      break;
-      case DELETE: {
-        HTTPResponseImpl response = new HTTPResponseImpl();
-        context.doDelete(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), response);
-        if (response.getStatus() >= 400)
-          os.sendError(HTTPStatus.fromInt(response.getStatus()));
-        else if (response.type == OutputType.PRINT_WRITER) {
-          response.writer.flush();
-          response.writer.close();
+        break;
+        case POST:
+          processPOST();
+        break;
+        case PUT:
+          processPUT();
+        break;
+        case DELETE: {
+          HTTPResponseImpl response = new HTTPResponseImpl();
+          context.doDelete(new HTTPRequestImpl(new HTTPInputStream(channel, manager)), response);
+          if (response.getStatus() >= 400)
+            os.sendError(HTTPStatus.fromInt(response.getStatus()));
+          else if (response.type == OutputType.PRINT_WRITER) {
+            response.writer.flush();
+            response.writer.close();
+          }
         }
+        break;
+        case TRACE:
+          processTRACE();
+        break;
       }
-      break;
-      case TRACE:
-        processTRACE();
-      break;
+    }
+    catch (RuntimeException e) {
+       os.sendError(HTTPStatus.INTERNAL_SERVER_ERROR);
     }
 
     os.close();
