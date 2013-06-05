@@ -127,7 +127,7 @@ final class HTTPContextHandler implements Runnable {
     
     Cookie sessionCookie = requestCookies.get(SESSION_COOKIE_NAME);
     if (sessionCookie != null) {
-      session = sessions.get(sessionCookie.getValue());
+      session = sessions.get(sessionCookie.getValue()); //TODO: Must check if it is not a hijack!!
       if (session != null) {
         manager.updateTimer(TIME_TO_EXPIRE_SESSION_MS, session);
         session.setLastAccessTime(System.currentTimeMillis());
@@ -400,6 +400,11 @@ final class HTTPContextHandler implements Runnable {
         return session.getId();
       
       return null;
+    }
+    
+    @Override
+    public boolean hasSession() {
+      return session != null;
     }
     
     @Override

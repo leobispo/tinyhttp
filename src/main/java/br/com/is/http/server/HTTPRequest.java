@@ -41,6 +41,8 @@ public interface HTTPRequest {
   
   public HTTPSession getSession();
   
+  public boolean hasSession();
+  
   public String getParameter(final String name);
 
   public Enumeration<String> getParameterNames();

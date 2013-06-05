@@ -11,7 +11,10 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
 import java.net.URL;
+import java.security.DigestInputStream;
 import java.security.KeyStore;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Scanner;
 import java.util.zip.GZIPInputStream;
 
@@ -19,21 +22,43 @@ import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
+import javax.xml.bind.annotation.adapters.HexBinaryAdapter;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import br.com.is.http.server.HTTPContext;
-import br.com.is.http.server.HTTPRequest;
-import br.com.is.http.server.HTTPResponse;
-import br.com.is.http.server.HTTPServer;
 import br.com.is.http.server.annotation.Context;
 import br.com.is.http.server.annotation.GET;
 import br.com.is.http.server.annotation.POST;
 
+@Context(urlPattern="/multipart.html")
+final class MultipartTest {
+  @POST
+  public void process(HTTPRequest req, HTTPResponse resp) {
+    final Part part = req.getPart("tux");
+    if (part != null) {
+      try {
+        final MessageDigest md = MessageDigest.getInstance("MD5");
+        final DigestInputStream dis = new DigestInputStream(part.getInputStream(), md);
+        
+        byte[] buffer = new byte[1024];
+        int numRead;
+
+        do {
+            numRead = dis.read(buffer);
+        } while (numRead != -1);
+        
+        dis.close();
+        resp.getOutputStream().write((new HexBinaryAdapter()).marshal(md.digest()).getBytes());
+      }
+      catch (NoSuchAlgorithmException | IOException e) {}
+    }
+  }
+}
+
 @Context(urlPattern="/test/annotation.html")
-class AnnotationTest {
+final class AnnotationTest {
   @GET
   @POST
   public void process(HTTPRequest req, HTTPResponse resp) {
@@ -62,7 +87,7 @@ class AnnotationTest {
 }
 
 @Context(urlPattern="/testerror.html")
-class ErrorTest {
+final class ErrorTest {
   @GET
   @POST
   public void process(HTTPRequest req, HTTPResponse resp) {
@@ -70,7 +95,9 @@ class ErrorTest {
   }
 }
 
-public class HTTPTest {
+public final class HTTPTest {
+  private static final int DEFAULT_BUFFER_SIZE = 1024 * 4;
+
   private String     content = null;
   private HTTPServer http    = null;
   private HTTPServer https   = null;
@@ -310,6 +337,36 @@ public class HTTPTest {
   }
   
   @Test
+  public void testMultipart() throws Exception {
+    final String header = "--boundary\r\nContent-Disposition: form-data; name=\"tux\";filename=\"tux.png\"\r\nContent-Type: image/pgn\r\n\r\n";
+    final String footer = "\r\n--boundary--";
+    
+    final URL url = new URL("http://localhost:9999/multipart.html"); 
+    final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+    
+    conn.setDoInput(true);
+    conn.setDoOutput(true);
+    conn.setRequestMethod("POST"); 
+    conn.setRequestProperty("Content-Type", "multipart/form-data;boundary=boundary");
+
+    final File tux = new File("src/test/resources/tux.png");
+    conn.setRequestProperty("Content-Length", "" + Integer.toString((int) header.length() + (int) tux.length() + (int) footer.length()));
+    
+    MessageDigest md = MessageDigest.getInstance("MD5");
+    conn.getOutputStream().write(header.getBytes());
+    copy(new DigestInputStream(new FileInputStream(tux), md), conn.getOutputStream());
+    conn.getOutputStream().write(footer.getBytes());
+    conn.disconnect();
+    
+    final String hex = (new HexBinaryAdapter()).marshal(md.digest());
+
+    final InputStream is = conn.getInputStream();
+    
+    assertEquals(hex, readInputStream(is));
+    is.close();
+  }
+  
+  @Test
   public void testStaticContextDirectory() throws Exception {
     final URL url = new URL("http://localhost:9999");
     final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -338,7 +395,7 @@ public class HTTPTest {
     
       final InputStream is = conn.getInputStream();
     
-      final String data = "    <font size=\"2\">(\n              2 KB)</font>\n<br>\n</body>\n</html>\n\n";
+      final String data = "    <font size=\"2\">(\n              2 KB)</font>\n<br>\n<a href=\"/tux.png\">tux.png</a>&nbsp;\n              <font size=\"2\">(\n              39 KB)</font>\n<br>\n</body>\n</html>\n\n";
     
       assertEquals(data, readInputStream(is));
       is.close();
@@ -360,7 +417,7 @@ public class HTTPTest {
     
     {
       final HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-      conn.setRequestProperty("Range", "bytes=500-510");
+      conn.setRequestProperty("Range", "bytes=600-610");
       conn.setAllowUserInteraction(false);
       conn.disconnect();
 
@@ -561,5 +618,29 @@ public class HTTPTest {
     return sb.toString();
   }
   
-  //TODO: Test Multipart
+  private static int copy(InputStream input, OutputStream output) throws IOException {
+    long count = copyLarge(input, output);
+    if (count > Integer.MAX_VALUE) {
+      return -1;
+    }
+    return (int) count;
+  }
+  
+  private static long copyLarge(InputStream input, OutputStream output) throws IOException {
+    byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
+    long count = 0;
+    int n = 0;
+    int flush = 0;
+    while (-1 != (n = input.read(buffer))) {
+      output.write(buffer, 0, n);
+      count += n;
+      flush += n;
+      if (flush > (DEFAULT_BUFFER_SIZE * 30000)) {
+        output.flush();
+        flush = 0;
+      }
+    }
+    
+    return count;
+  }
 }
